@@ -1,4 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import { readFile, unlink } from 'fs/promises';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { randomUUID } from 'crypto';
+
+const execAsync = promisify(exec);
+
+// Edge TTS 语音映射
+const EDGE_VOICES: Record<string, string> = {
+  'us-female': 'en-US-AriaNeural',
+  'us-male': 'en-US-GuyNeural',
+  'uk-female': 'en-GB-SoniaNeural',
+  'uk-male': 'en-GB-RyanNeural',
+  'shimmer': 'en-US-JennyNeural',
+  'fable': 'en-GB-MiaNeural'
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,40 +30,41 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 如果配置了 OpenAI API Key，使用 OpenAI TTS
-    if (process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY) {
-      const apiKey = process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY;
+    const edgeVoice = EDGE_VOICES[voice] || 'en-US-AriaNeural';
+    const uuid = randomUUID();
+    const outputPath = join(tmpdir(), `tts-${uuid}.mp3`);
+
+    // 使用 edge-tts 命令行工具
+    const rate = Math.round((speed - 1) * 100);
+    const rateArg = rate >= 0 ? `+${rate}%` : `${rate}%`;
+    
+    const command = `edge-tts --voice "${edgeVoice}" --text "${text.substring(0, 2000).replace(/"/g, '\\"')}" --write-media "${outputPath}" --rate="${rateArg}"`;
+
+    try {
+      await execAsync(command, { timeout: 30000 });
       
-      const response = await fetch('https://api.openai.com/v1/audio/speech', {
-        method: 'POST',
+      const audioBuffer = await readFile(outputPath);
+      
+      // 清理临时文件
+      try {
+        await unlink(outputPath);
+      } catch {}
+      
+      return new NextResponse(audioBuffer, {
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'tts-1',
-          input: text.substring(0, 4000),
-          voice: voice.includes('female') ? 'alloy' : 'echo',
-          speed: speed
-        })
+          'Content-Type': 'audio/mpeg',
+          'Content-Length': audioBuffer.byteLength.toString()
+        }
       });
-
-      if (response.ok) {
-        const audioBuffer = await response.arrayBuffer();
-        return new NextResponse(audioBuffer, {
-          headers: {
-            'Content-Type': 'audio/mpeg',
-            'Content-Length': audioBuffer.byteLength.toString()
-          }
-        });
-      }
+    } catch (execError) {
+      console.error('Edge TTS exec error:', execError);
+      
+      // 如果 edge-tts 命令失败，返回错误
+      return NextResponse.json({
+        success: false,
+        error: 'Edge TTS 服务不可用，请确保已安装 edge-tts: pip install edge-tts'
+      }, { status: 503 });
     }
-
-    // 返回提示：TTS 服务未配置
-    return NextResponse.json({
-      success: false,
-      error: 'TTS 服务未配置，请在 .env 文件中设置 OPENAI_API_KEY'
-    }, { status: 503 });
 
   } catch (error) {
     console.error('TTS error:', error);
