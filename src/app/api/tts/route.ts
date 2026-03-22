@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { readFile, unlink, access } from 'fs/promises';
+import { readFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
@@ -18,60 +18,24 @@ const EDGE_VOICES: Record<string, string> = {
   'fable': 'en-GB-MiaNeural'
 };
 
-// 缓存找到的 edge-tts 路径
-let cachedEdgeTTSPath: string | null = null;
-
-// 查找 edge-tts 命令（异步检测文件是否存在）
-async function findEdgeTTS(): Promise<string | null> {
-  if (cachedEdgeTTSPath) return cachedEdgeTTSPath;
-  
+// 查找 edge-tts 命令
+function getEdgeTTSCommand(): string {
   // 优先使用环境变量指定的路径
   if (process.env.EDGE_TTS_PATH) {
-    try {
-      await access(process.env.EDGE_TTS_PATH);
-      cachedEdgeTTSPath = process.env.EDGE_TTS_PATH;
-      console.log('[TTS] Using EDGE_TTS_PATH:', cachedEdgeTTSPath);
-      return cachedEdgeTTSPath;
-    } catch {
-      console.warn('[TTS] EDGE_TTS_PATH set but file not found:', process.env.EDGE_TTS_PATH);
-    }
+    return process.env.EDGE_TTS_PATH;
   }
   
   // 尝试常见的安装位置
   const possiblePaths = [
     '/home/z/.local/bin/edge-tts',
-    '/root/.local/bin/edge-tts',
+    `${process.env.HOME}/.local/bin/edge-tts`,
     '/usr/local/bin/edge-tts',
     '/usr/bin/edge-tts',
-    `${process.env.HOME}/.local/bin/edge-tts`,
+    'edge-tts' // 使用系统 PATH
   ];
   
-  for (const path of possiblePaths) {
-    try {
-      await access(path);
-      cachedEdgeTTSPath = path;
-      console.log('[TTS] Found edge-tts at:', cachedEdgeTTSPath);
-      return cachedEdgeTTSPath;
-    } catch {
-      // 继续尝试下一个路径
-    }
-  }
-  
-  // 最后尝试使用系统 PATH 中的 edge-tts
-  try {
-    const { stdout } = await execAsync('which edge-tts', { timeout: 5000 });
-    const path = stdout.trim();
-    if (path) {
-      cachedEdgeTTSPath = path;
-      console.log('[TTS] Found edge-tts via which:', cachedEdgeTTSPath);
-      return cachedEdgeTTSPath;
-    }
-  } catch {
-    // which 命令失败
-  }
-  
-  console.error('[TTS] edge-tts not found in any location');
-  return null;
+  // 返回第一个可能存在的路径（在运行时检测）
+  return possiblePaths[0];
 }
 
 // 处理文本，添加自然停顿
@@ -113,17 +77,8 @@ export async function POST(request: NextRequest) {
     console.log(`[TTS] Text: "${escapedText.substring(0, 100)}..."`);
     console.log(`[TTS] Voice: ${edgeVoice}, Rate: ${rateArg}`);
 
-    // 获取 edge-tts 命令路径（动态检测）
-    const edgeTTSPath = await findEdgeTTS();
-    
-    if (!edgeTTSPath) {
-      console.error('[TTS] edge-tts not found');
-      return NextResponse.json({
-        success: false,
-        error: '语音服务不可用：未找到 edge-tts，请联系管理员安装',
-        hint: 'pip3 install edge-tts'
-      }, { status: 503 });
-    }
+    // 获取 edge-tts 命令路径
+    const edgeTTSPath = process.env.EDGE_TTS_PATH || getEdgeTTSCommand();
     
     // 环境变量
     const execEnv = {
