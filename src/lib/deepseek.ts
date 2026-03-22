@@ -139,15 +139,15 @@ export function IELTS_PART1_EVALUATION_PROMPT(partNumber: number): string {
     "pronunciation": <0.0-9.0>
   },
   "feedback": {
-    "fluencyCoherence": "<detailed feedback in Chinese>",
-    "lexicalResource": "<detailed feedback in Chinese>",
-    "grammaticalRange": "<detailed feedback in Chinese>",
-    "pronunciation": "<detailed feedback in Chinese>"
+    "fluencyCoherence": "<detailed feedback in Simplified Chinese (简体中文)>",
+    "lexicalResource": "<detailed feedback in Simplified Chinese (简体中文)>",
+    "grammaticalRange": "<detailed feedback in Simplified Chinese (简体中文)>",
+    "pronunciation": "<detailed feedback in Simplified Chinese (简体中文)>"
   },
   "improvements": [
-    {"area": "FC|LR|GRA|P", "issue": "<具体问题>", "suggestion": "<改进建议>", "example": "<改进示例>"}
+    {"area": "FC|LR|GRA|P", "issue": "<具体问题 in 简体中文>", "suggestion": "<改进建议 in 简体中文>", "example": "<改进示例 in English>"}
   ],
-  "strengths": ["<具体优势>", "<另一个优势>"],
+  "strengths": ["<具体优势 in 简体中文>", "<另一个优势 in 简体中文>"],
   "modelAnswer": "<Band 7-8 level spoken response, 40-60 words, natural and conversational>"
 }`;
 }
@@ -203,15 +203,15 @@ What made it so memorable, though, was that it was the first time I'd really tra
     "pronunciation": <0.0-9.0>
   },
   "feedback": {
-    "fluencyCoherence": "<详细反馈，中文>",
-    "lexicalResource": "<详细反馈，中文>",
-    "grammaticalRange": "<详细反馈，中文>",
-    "pronunciation": "<详细反馈，中文>"
+    "fluencyCoherence": "<详细反馈，简体中文>",
+    "lexicalResource": "<详细反馈，简体中文>",
+    "grammaticalRange": "<详细反馈，简体中文>",
+    "pronunciation": "<详细反馈，简体中文>"
   },
   "improvements": [
-    {"area": "FC|LR|GRA|P", "issue": "<具体问题>", "suggestion": "<改进建议>", "example": "<改进示例>"}
+    {"area": "FC|LR|GRA|P", "issue": "<具体问题 in 简体中文>", "suggestion": "<改进建议 in 简体中文>", "example": "<改进示例 in English>"}
   ],
-  "strengths": ["<具体优势>", "<另一个优势>"],
+  "strengths": ["<具体优势 in 简体中文>", "<另一个优势 in 简体中文>"],
   "modelAnswer": "<Band 7-8 level spoken narrative, 180-250 words, engaging storytelling style>"
 }`;
 }
@@ -262,15 +262,15 @@ export function IELTS_PART3_EVALUATION_PROMPT(partNumber: number): string {
     "pronunciation": <0.0-9.0>
   },
   "feedback": {
-    "fluencyCoherence": "<详细反馈，中文>",
-    "lexicalResource": "<详细反馈，中文>",
-    "grammaticalRange": "<详细反馈，中文>",
-    "pronunciation": "<详细反馈，中文>"
+    "fluencyCoherence": "<详细反馈，简体中文>",
+    "lexicalResource": "<详细反馈，简体中文>",
+    "grammaticalRange": "<详细反馈，简体中文>",
+    "pronunciation": "<详细反馈，简体中文>"
   },
   "improvements": [
-    {"area": "FC|LR|GRA|P", "issue": "<具体问题>", "suggestion": "<改进建议>", "example": "<改进示例>"}
+    {"area": "FC|LR|GRA|P", "issue": "<具体问题 in 简体中文>", "suggestion": "<改进建议 in 简体中文>", "example": "<改进示例 in English>"}
   ],
-  "strengths": ["<具体优势>", "<另一个优势>"],
+  "strengths": ["<具体优势 in 简体中文>", "<另一个优势 in 简体中文>"],
   "modelAnswer": "<Band 7-8 level spoken discussion, 80-120 words, analytical with examples>"
 }`;
 }

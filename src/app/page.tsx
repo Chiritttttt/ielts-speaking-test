@@ -677,14 +677,13 @@ export default function IELTSSpeakingApp() {
           onNextQuestion={() => {
             if (currentQuestionIndex < questions.length - 1) {
               nextQuestion();
-              toast.info('已跳过当前题目');
             } else {
               const pending = useIELTSStore.getState().pendingTranscriptions;
-              if (pending.length > 0) {
-                toast.info('正在评估您的回答...');
+              if (pending.length === questions.length) {
+                toast.info('正在评分您的回答...');
                 evaluatePart();
               } else {
-                toast.warning('请先录音再进行评估');
+                toast.warning('请完成所有题目的录音后再评分');
               }
             }
           }}
@@ -721,11 +720,11 @@ export default function IELTSSpeakingApp() {
       <header className="sticky top-0 z-50 bg-[#E31837] text-white">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => { reset(); setView('home'); }}>
-            <svg width="80" height="32" viewBox="0 0 120 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <text x="10" y="28" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="bold" fill="white" letter-spacing="2">
+            <svg width="70" height="28" viewBox="0 0 70 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <text x="0" y="20" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="white" letter-spacing="2">
                 IELTS
               </text>
-              <rect x="10" y="32" width="70" height="3" rx="1.5" fill="white"/>
+              <rect x="0" y="24" width="55" height="2" rx="1" fill="white"/>
             </svg>
           </div>
           
@@ -987,11 +986,11 @@ function HomeView({ onStartTest, onViewHistory }: {
       <div className="bg-[#f8f8f8] -mx-4 px-4 py-16 text-center border-b border-[#eaeaea]">
         {/* IELTS Logo */}
         <div className="flex justify-center mb-4">
-          <svg width="140" height="48" viewBox="0 0 120 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <text x="10" y="28" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="bold" fill="#E31837" letter-spacing="2">
+          <svg width="100" height="40" viewBox="0 0 100 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <text x="5" y="28" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="bold" fill="#E31837" letter-spacing="3">
               IELTS
             </text>
-            <rect x="10" y="32" width="70" height="3" rx="1.5" fill="#E31837"/>
+            <rect x="5" y="33" width="80" height="3" rx="1.5" fill="#E31837"/>
           </svg>
         </div>
         <h1 className="text-2xl font-medium text-[#666666] mb-2">口语练习</h1>
@@ -1045,11 +1044,11 @@ function HomeView({ onStartTest, onViewHistory }: {
 
       <footer className="bg-[#333333] -mx-4 px-4 py-8 text-center">
         <div className="flex justify-center mb-3">
-          <svg width="80" height="28" viewBox="0 0 120 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <text x="10" y="28" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="bold" fill="white" letter-spacing="2" opacity="0.8">
+          <svg width="70" height="28" viewBox="0 0 70 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <text x="0" y="20" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="white" letter-spacing="2" opacity="0.8">
               IELTS
             </text>
-            <rect x="10" y="32" width="70" height="3" rx="1.5" fill="white" opacity="0.6"/>
+            <rect x="0" y="24" width="55" height="2" rx="1" fill="white" opacity="0.6"/>
           </svg>
         </div>
         <p className="text-white/40 text-xs">口语练习平台</p>
@@ -1062,7 +1061,7 @@ function HomeView({ onStartTest, onViewHistory }: {
 function TestView({ 
   questions, currentQuestionIndex, currentPart, isRecording, recordingDuration,
   isLoading, onStartRecording, onStopRecording, onPrevQuestion, onNextQuestion, testMode,
-  settings, updateSetting
+  pendingCount, settings, updateSetting
 }: {
   questions: Array<{ id: string; questionText: string; category?: string }>;
   currentQuestionIndex: number;
@@ -1081,6 +1080,8 @@ function TestView({
   updateSetting: <K extends keyof { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean }>(key: K, value: { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean }[K]) => void;
 }) {
   const currentQuestion = questions[currentQuestionIndex];
+  // 追踪当前题目是否已录音
+  const [currentQuestionRecorded, setCurrentQuestionRecorded] = useState(false);
   // showQuestionAfterSpeech=true: 播放完毕后自动显示文本
   // showQuestionAfterSpeech=false: 始终需要手动点击显示
   // 无论设置如何，初始状态都是隐藏
@@ -1165,6 +1166,10 @@ function TestView({
       // 每次新题目都重置为隐藏状态
       setShowQuestion(false);
       
+      // 检查当前题目是否已被回答
+      // 通过 pendingCount 判断：如果 pendingCount > currentQuestionIndex，说明当前题目已回答
+      setCurrentQuestionRecorded(pendingCount > currentQuestionIndex);
+      
       // 自动播放音频
       if (settings.autoPlayQuestion) {
         const timer = setTimeout(() => {
@@ -1177,7 +1182,12 @@ function TestView({
     return () => {
       stopAudio();
     };
-  }, [currentQuestion?.id, settings.autoPlayQuestion, playQuestionAudio, stopAudio]);
+  }, [currentQuestion?.id, settings.autoPlayQuestion, playQuestionAudio, stopAudio, pendingCount, currentQuestionIndex]);
+
+  // 当 pendingCount 变化时，更新当前题目是否已回答
+  useEffect(() => {
+    setCurrentQuestionRecorded(pendingCount > currentQuestionIndex);
+  }, [pendingCount, currentQuestionIndex]);
 
   // 组件卸载时清理音频
   useEffect(() => {
@@ -1305,15 +1315,39 @@ function TestView({
             <p className="text-xs text-slate-500 text-center">
               点击"开始录音"后，请对着麦克风清晰回答问题
             </p>
+            
+            {/* 显示进度提示 */}
+            <div className="mt-4 text-center">
+              <p className="text-sm text-slate-600">
+                已回答 <span className="font-semibold text-[#E31837]">{pendingCount}</span> / {questions.length} 题
+              </p>
+              {!currentQuestionRecorded && (
+                <p className="text-xs text-amber-600 mt-1">请先录音回答当前题目</p>
+              )}
+            </div>
           </div>
         </CardContent>
         <CardFooter className="justify-between">
           <Button variant="ghost" onClick={onPrevQuestion} disabled={currentQuestionIndex === 0}>
             <ChevronLeft className="w-4 h-4 mr-1" /> 上一题
           </Button>
-          <Button variant="outline" onClick={onNextQuestion}>
-            {currentQuestionIndex < questions.length - 1 ? '下一题' : '完成评估'}
-            <ChevronRight className="w-4 h-4 ml-1" />
+          <Button 
+            variant="outline" 
+            onClick={onNextQuestion}
+            disabled={!currentQuestionRecorded}
+            className={!currentQuestionRecorded ? 'opacity-50 cursor-not-allowed' : ''}
+          >
+            {currentQuestionIndex < questions.length - 1 ? (
+              <>
+                下一题
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </>
+            ) : (
+              <>
+                完成评分
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </>
+            )}
           </Button>
         </CardFooter>
       </Card>
