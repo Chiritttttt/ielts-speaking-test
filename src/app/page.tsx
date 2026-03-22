@@ -748,11 +748,11 @@ export default function IELTSSpeakingApp() {
       <header className="sticky top-0 z-50 bg-[#E31837] text-white">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => { reset(); setView('home'); }}>
-            <svg width="70" height="28" viewBox="0 0 70 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <text x="0" y="20" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="white" letter-spacing="2">
+            <svg width="60" height="24" viewBox="0 0 60 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <text x="2" y="17" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="bold" fill="white" letter-spacing="1.5">
                 IELTS
               </text>
-              <rect x="0" y="24" width="55" height="2" rx="1" fill="white"/>
+              <rect x="2" y="20" width="45" height="2" rx="1" fill="white"/>
             </svg>
           </div>
           
@@ -1014,11 +1014,11 @@ function HomeView({ onStartTest, onViewHistory }: {
       <div className="bg-[#f8f8f8] -mx-4 px-4 py-16 text-center border-b border-[#eaeaea]">
         {/* IELTS Logo */}
         <div className="flex justify-center mb-4">
-          <svg width="100" height="40" viewBox="0 0 100 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <text x="5" y="28" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="bold" fill="#E31837" letter-spacing="3">
+          <svg width="90" height="36" viewBox="0 0 90 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <text x="5" y="26" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="bold" fill="#E31837" letter-spacing="2">
               IELTS
             </text>
-            <rect x="5" y="33" width="80" height="3" rx="1.5" fill="#E31837"/>
+            <rect x="5" y="30" width="70" height="3" rx="1.5" fill="#E31837"/>
           </svg>
         </div>
         <h1 className="text-2xl font-medium text-[#666666] mb-2">口语练习</h1>
@@ -1072,11 +1072,11 @@ function HomeView({ onStartTest, onViewHistory }: {
 
       <footer className="bg-[#333333] -mx-4 px-4 py-8 text-center">
         <div className="flex justify-center mb-3">
-          <svg width="70" height="28" viewBox="0 0 70 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <text x="0" y="20" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="bold" fill="white" letter-spacing="2" opacity="0.8">
+          <svg width="60" height="24" viewBox="0 0 60 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <text x="2" y="17" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="bold" fill="white" letter-spacing="1.5" opacity="0.8">
               IELTS
             </text>
-            <rect x="0" y="24" width="55" height="2" rx="1" fill="white" opacity="0.6"/>
+            <rect x="2" y="20" width="45" height="2" rx="1" fill="white" opacity="0.6"/>
           </svg>
         </div>
         <p className="text-white/40 text-xs">口语练习平台</p>
