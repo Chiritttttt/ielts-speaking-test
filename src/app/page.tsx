@@ -1356,14 +1356,22 @@ function TestView({
 }
 
 // Audio Player Component
-function AudioPlayer({ audioBase64 }: { audioBase64?: string }) {
+function AudioPlayer({ audioBase64, duration }: { audioBase64?: string; duration?: number }) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const formatTimeDisplay = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const playAudio = () => {
     if (!audioBase64) return;
     
-    if (audioRef.current) {
+    if (audioRef.current && isPlaying) {
       audioRef.current.pause();
       audioRef.current = null;
       setIsPlaying(false);
@@ -1374,8 +1382,17 @@ function AudioPlayer({ audioBase64 }: { audioBase64?: string }) {
       const audio = new Audio(`data:audio/webm;base64,${audioBase64}`);
       audioRef.current = audio;
       
+      audio.onloadedmetadata = () => {
+        setAudioDuration(audio.duration);
+      };
+      
+      audio.ontimeupdate = () => {
+        setCurrentTime(audio.currentTime);
+      };
+      
       audio.onended = () => {
         setIsPlaying(false);
+        setCurrentTime(0);
         audioRef.current = null;
       };
       
@@ -1392,27 +1409,52 @@ function AudioPlayer({ audioBase64 }: { audioBase64?: string }) {
     }
   };
 
+  // 清理
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
   if (!audioBase64) return null;
 
+  // 使用传入的duration或音频实际时长
+  const displayDuration = duration || audioDuration;
+
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={playAudio}
-      className="gap-1"
-    >
-      {isPlaying ? (
-        <>
-          <Square className="w-4 h-4" />
-          停止
-        </>
-      ) : (
-        <>
-          <Volume2 className="w-4 h-4" />
-          听录音
-        </>
+    <div className="flex items-center gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={playAudio}
+        className="gap-1"
+      >
+        {isPlaying ? (
+          <>
+            <Square className="w-4 h-4" />
+            停止
+          </>
+        ) : (
+          <>
+            <Volume2 className="w-4 h-4" />
+            播放录音
+          </>
+        )}
+      </Button>
+      {isPlaying && (
+        <span className="text-xs text-slate-500">
+          {formatTimeDisplay(currentTime)} / {formatTimeDisplay(displayDuration)}
+        </span>
       )}
-    </Button>
+      {!isPlaying && displayDuration > 0 && (
+        <span className="text-xs text-slate-500">
+          {formatTimeDisplay(displayDuration)}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -1520,7 +1562,7 @@ function ResultView({ evaluation, onNext, onRetry }: {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <Label className="text-xs text-slate-500">您的回答</Label>
-                    <AudioPlayer audioBase64={response.audioBase64} />
+                    <AudioPlayer audioBase64={response.audioBase64} duration={response.duration} />
                   </div>
                   <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
                     {response.transcription || '无转录内容'}
@@ -1800,7 +1842,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <Label className="text-xs text-slate-500">您的回答</Label>
-                    <AudioPlayer audioBase64={response.audioBase64} />
+                    <AudioPlayer audioBase64={response.audioBase64} duration={response.duration} />
                   </div>
                   <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
                     {response.transcription || '无记录'}
