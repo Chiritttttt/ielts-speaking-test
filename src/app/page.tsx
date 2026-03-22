@@ -84,6 +84,9 @@ export default function IELTSSpeakingApp() {
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
   const [authUser, setAuthUser] = useState<{ id: string; username: string; name?: string } | null>(null);
+  
+  // 评估进度状态
+  const [evaluatingProgress, setEvaluatingProgress] = useState<{ current: number; total: number; message: string } | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -414,59 +417,87 @@ export default function IELTSSpeakingApp() {
 
   const evaluatePart = async () => {
     setIsLoading(true);
+    const transcriptionsToEvaluate = useIELTSStore.getState().pendingTranscriptions;
     
-    try {
-      const transcriptionsToEvaluate = useIELTSStore.getState().pendingTranscriptions;
-      
-      if (transcriptionsToEvaluate.length === 0) {
-        toast.error('没有待评估的回答');
-        setIsLoading(false);
-        return;
-      }
+    if (transcriptionsToEvaluate.length === 0) {
+      toast.error('没有待评估的回答');
+      setIsLoading(false);
+      return;
+    }
 
-      const response = await fetch('/api/evaluate-batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          partNumber: currentPart,
-          transcriptions: transcriptionsToEvaluate
-        })
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        for (const evalResult of data.responses) {
+    const total = transcriptionsToEvaluate.length;
+    setEvaluatingProgress({ current: 0, total, message: '准备评估...' });
+
+    try {
+      // 逐个评估并显示进度
+      const results = [];
+      for (let i = 0; i < transcriptionsToEvaluate.length; i++) {
+        const t = transcriptionsToEvaluate[i];
+        setEvaluatingProgress({ 
+          current: i + 1, 
+          total, 
+          message: `正在评估第 ${i + 1}/${total} 个回答...` 
+        });
+
+        const response = await fetch('/api/evaluate-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            partNumber: currentPart,
+            transcriptions: [t]
+          })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.responses?.length > 0) {
+          results.push(data.responses[0]);
+          
           const responseData: ResponseData = {
-            partNumber: evalResult.partNumber || currentPart,
-            questionText: evalResult.questionText,
-            transcription: evalResult.transcription,
-            duration: evalResult.duration,
-            scores: evalResult.scores,
-            feedback: evalResult.feedback,
-            improvements: evalResult.improvements,
-            modelAnswer: evalResult.modelAnswer
+            partNumber: data.responses[0].partNumber || currentPart,
+            questionText: data.responses[0].questionText,
+            transcription: data.responses[0].transcription,
+            duration: data.responses[0].duration,
+            scores: data.responses[0].scores,
+            feedback: data.responses[0].feedback,
+            improvements: data.responses[0].improvements,
+            modelAnswer: data.responses[0].modelAnswer
           };
           addResponse(responseData);
         }
-        
-        clearPendingTranscriptions();
-        
-        setCurrentEvaluation({
-          partNumber: currentPart,
-          averageScores: data.averageScores,
-          partBandScore: data.partBandScore,
-          responses: data.responses
-        });
-        
-        toast.success(`Part ${currentPart} 评估完成！`);
-        setView('result');
-      } else {
-        toast.error('评估失败: ' + data.error);
       }
+
+      clearPendingTranscriptions();
+      
+      // 计算平均分
+      const avgScores = {
+        fluencyCoherence: results.reduce((sum: number, r: any) => sum + (r.scores?.fluencyCoherence || 6), 0) / results.length,
+        lexicalResource: results.reduce((sum: number, r: any) => sum + (r.scores?.lexicalResource || 6), 0) / results.length,
+        grammaticalRange: results.reduce((sum: number, r: any) => sum + (r.scores?.grammaticalRange || 6), 0) / results.length,
+        pronunciation: results.reduce((sum: number, r: any) => sum + (r.scores?.pronunciation || 6), 0) / results.length,
+        overall: 0
+      };
+      avgScores.overall = (avgScores.fluencyCoherence + avgScores.lexicalResource + avgScores.grammaticalRange + avgScores.pronunciation) / 4;
+
+      setCurrentEvaluation({
+        partNumber: currentPart,
+        averageScores: avgScores,
+        partBandScore: avgScores.overall,
+        responses: results
+      });
+
+      setEvaluatingProgress({ current: total, total, message: '评估完成！' });
+      toast.success(`Part ${currentPart} 评估完成！`);
+      
+      setTimeout(() => {
+        setEvaluatingProgress(null);
+        setView('result');
+      }, 500);
     } catch (error) {
+      console.error('Evaluation error:', error);
       toast.error('评估服务出错');
+      setEvaluatingProgress(null);
     }
     setIsLoading(false);
   };
@@ -485,59 +516,86 @@ export default function IELTSSpeakingApp() {
 
   const evaluateAllParts = async () => {
     setIsLoading(true);
+    const allTranscriptions = useIELTSStore.getState().pendingTranscriptions;
     
-    try {
-      const allTranscriptions = useIELTSStore.getState().pendingTranscriptions;
-      
-      if (allTranscriptions.length === 0) {
-        toast.error('没有待评估的回答');
-        setIsLoading(false);
-        return;
-      }
+    if (allTranscriptions.length === 0) {
+      toast.error('没有待评估的回答');
+      setIsLoading(false);
+      return;
+    }
 
-      const response = await fetch('/api/evaluate-batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          partNumber: 0,
-          transcriptions: allTranscriptions
-        })
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        for (const evalResult of data.responses) {
+    const total = allTranscriptions.length;
+    setEvaluatingProgress({ current: 0, total, message: '准备评估...' });
+
+    try {
+      const results = [];
+      for (let i = 0; i < allTranscriptions.length; i++) {
+        const t = allTranscriptions[i];
+        setEvaluatingProgress({ 
+          current: i + 1, 
+          total, 
+          message: `正在评估第 ${i + 1}/${total} 个回答...` 
+        });
+
+        const response = await fetch('/api/evaluate-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            partNumber: 0,
+            transcriptions: [t]
+          })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success && data.responses?.length > 0) {
+          results.push(data.responses[0]);
+          
           const responseData: ResponseData = {
-            partNumber: evalResult.partNumber || currentPart,
-            questionText: evalResult.questionText,
-            transcription: evalResult.transcription,
-            duration: evalResult.duration,
-            scores: evalResult.scores,
-            feedback: evalResult.feedback,
-            improvements: evalResult.improvements,
-            modelAnswer: evalResult.modelAnswer
+            partNumber: data.responses[0].partNumber || t.partNumber,
+            questionText: data.responses[0].questionText,
+            transcription: data.responses[0].transcription,
+            duration: data.responses[0].duration,
+            scores: data.responses[0].scores,
+            feedback: data.responses[0].feedback,
+            improvements: data.responses[0].improvements,
+            modelAnswer: data.responses[0].modelAnswer
           };
           addResponse(responseData);
         }
-        
-        clearPendingTranscriptions();
-        
-        setCurrentEvaluation({
-          partNumber: 0,
-          averageScores: data.averageScores,
-          partBandScore: data.partBandScore,
-          responses: data.responses
-        });
-        
-        toast.success('完整测试评估完成！');
-        setView('result');
-      } else {
-        toast.error('评估失败: ' + data.error);
       }
+
+      clearPendingTranscriptions();
+      
+      // 计算平均分
+      const avgScores = {
+        fluencyCoherence: results.reduce((sum: number, r: any) => sum + (r.scores?.fluencyCoherence || 6), 0) / results.length,
+        lexicalResource: results.reduce((sum: number, r: any) => sum + (r.scores?.lexicalResource || 6), 0) / results.length,
+        grammaticalRange: results.reduce((sum: number, r: any) => sum + (r.scores?.grammaticalRange || 6), 0) / results.length,
+        pronunciation: results.reduce((sum: number, r: any) => sum + (r.scores?.pronunciation || 6), 0) / results.length,
+        overall: 0
+      };
+      avgScores.overall = (avgScores.fluencyCoherence + avgScores.lexicalResource + avgScores.grammaticalRange + avgScores.pronunciation) / 4;
+
+      setCurrentEvaluation({
+        partNumber: 0,
+        averageScores: avgScores,
+        partBandScore: avgScores.overall,
+        responses: results
+      });
+
+      setEvaluatingProgress({ current: total, total, message: '评估完成！' });
+      toast.success('完整测试评估完成！');
+      
+      setTimeout(() => {
+        setEvaluatingProgress(null);
+        setView('result');
+      }, 500);
     } catch (error) {
+      console.error('Evaluation error:', error);
       toast.error('评估服务出错');
+      setEvaluatingProgress(null);
     }
     setIsLoading(false);
   };
@@ -876,11 +934,35 @@ export default function IELTSSpeakingApp() {
       />
 
       {/* Loading indicator */}
-      {isLoading && (
+      {isLoading && !evaluatingProgress && (
         <div className="fixed bottom-4 right-4 z-50">
           <div className="flex items-center gap-2 px-4 py-2 bg-white border border-[#eaeaea] rounded shadow-sm">
             <Loader2 className="w-4 h-4 animate-spin text-[#E31837]" />
             <span className="text-sm text-[#666666]">处理中...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Evaluation progress indicator */}
+      {evaluatingProgress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl p-6 shadow-xl max-w-sm w-full mx-4">
+            <div className="text-center">
+              <Loader2 className="w-10 h-10 animate-spin text-[#E31837] mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-[#222222] mb-2">正在评估</h3>
+              <p className="text-sm text-[#666666] mb-4">{evaluatingProgress.message}</p>
+              
+              {/* Progress bar */}
+              <div className="w-full bg-slate-200 rounded-full h-3 mb-2">
+                <div 
+                  className="bg-[#E31837] h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${(evaluatingProgress.current / evaluatingProgress.total) * 100}%` }}
+                />
+              </div>
+              <p className="text-xs text-slate-500">
+                {evaluatingProgress.current} / {evaluatingProgress.total}
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -975,8 +1057,9 @@ function TestView({
   updateSetting: <K extends keyof { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean }>(key: K, value: { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean }[K]) => void;
 }) {
   const currentQuestion = questions[currentQuestionIndex];
-  // showQuestionAfterSpeech=false 表示语音播放后显示，所以默认隐藏题目
-  const [showQuestion, setShowQuestion] = useState(settings.showQuestionAfterSpeech);
+  // showQuestionAfterSpeech=true 表示"语音播放后显示"，即默认隐藏，播放后显示
+  // showQuestionAfterSpeech=false 表示"始终显示"，即默认就显示
+  const [showQuestion, setShowQuestion] = useState(!settings.showQuestionAfterSpeech);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -1017,8 +1100,8 @@ function TestView({
       
       audio.onended = () => {
         setIsPlayingAudio(false);
-        // 语音播放后显示题目文本
-        if (!settings.showQuestionAfterSpeech) {
+        // 只有当设置"语音播放后显示"时，播放完毕才显示题目
+        if (settings.showQuestionAfterSpeech) {
           setShowQuestion(true);
         }
       };
@@ -1026,6 +1109,8 @@ function TestView({
       audio.onerror = () => {
         setIsPlayingAudio(false);
         setAudioError('音频播放失败');
+        // 播放失败时显示题目
+        setShowQuestion(true);
       };
       
       await audio.play();
@@ -1033,10 +1118,8 @@ function TestView({
       console.error('Audio play error:', error);
       setIsPlayingAudio(false);
       setAudioError('语音服务暂时不可用');
-      // 如果音频播放失败，显示题目文本
-      if (!settings.showQuestionAfterSpeech) {
-        setShowQuestion(true);
-      }
+      // 播放失败时显示题目
+      setShowQuestion(true);
     }
   }, [currentQuestion?.questionText, settings.defaultVoice, settings.voiceSpeed, settings.showQuestionAfterSpeech]);
 
@@ -1054,12 +1137,11 @@ function TestView({
     if (currentQuestion && currentQuestion.id !== prevQuestionIdRef.current) {
       prevQuestionIdRef.current = currentQuestion.id;
       
-      // 重置题目显示状态
-      setShowQuestion(settings.showQuestionAfterSpeech);
+      // 重置题目显示状态：如果设置"播放后显示"则默认隐藏，否则默认显示
+      setShowQuestion(!settings.showQuestionAfterSpeech);
       
       // 自动播放音频
       if (settings.autoPlayQuestion) {
-        // 延迟一点播放，确保页面已加载
         const timer = setTimeout(() => {
           playQuestionAudio();
         }, 300);
@@ -1125,8 +1207,8 @@ function TestView({
                   </>
                 )}
               </Button>
-              {/* 显示/隐藏题目按钮 */}
-              {!settings.showQuestionAfterSpeech && (
+              {/* 显示/隐藏题目按钮 - 只有设置"播放后显示"时才显示此按钮 */}
+              {settings.showQuestionAfterSpeech && (
                 <Button
                   variant="outline"
                   size="sm"
@@ -1210,8 +1292,17 @@ function ResultView({ evaluation, onNext, onRetry }: {
   onNext: () => void;
   onRetry: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<'scores' | 'responses' | 'improvements'>('scores');
+  
   if (!evaluation) {
-    return <Card><CardContent className="pt-6">加载中...</CardContent></Card>;
+    return (
+      <Card>
+        <CardContent className="pt-6 text-center">
+          <Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" />
+          <p className="text-sm text-slate-500 mt-3">加载中...</p>
+        </CardContent>
+      </Card>
+    );
   }
 
   const avgScore = evaluation.averageScores?.overall || 
@@ -1220,6 +1311,7 @@ function ResultView({ evaluation, onNext, onRetry }: {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      {/* 总分卡片 */}
       <Card className="overflow-hidden">
         <div className="bg-[#E31837] p-8 text-white text-center">
           <Award className="w-10 h-10 mx-auto mb-3 opacity-90" />
@@ -1229,27 +1321,193 @@ function ResultView({ evaluation, onNext, onRetry }: {
         </div>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>各项评分</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {[
-            { name: '流利度与连贯性', score: evaluation.averageScores?.fluencyCoherence },
-            { name: '词汇丰富度', score: evaluation.averageScores?.lexicalResource },
-            { name: '语法多样性', score: evaluation.averageScores?.grammaticalRange },
-            { name: '发音准确度', score: evaluation.averageScores?.pronunciation },
-          ].map((item) => (
-            <div key={item.name}>
-              <div className="flex justify-between mb-1">
-                <span className="font-medium">{item.name}</span>
-                <span className="text-[#E31837] font-semibold">{(item.score || 6.0).toFixed(1)}</span>
+      {/* 标签页切换 */}
+      <div className="flex gap-2 bg-slate-100 p-1 rounded-lg">
+        {[
+          { key: 'scores', label: '评分详情' },
+          { key: 'responses', label: '回答回顾' },
+          { key: 'improvements', label: '改进建议' }
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key as typeof activeTab)}
+            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+              activeTab === tab.key ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 评分详情 */}
+      {activeTab === 'scores' && (
+        <Card>
+          <CardHeader>
+            <CardTitle>各项评分</CardTitle>
+            <CardDescription>基于雅思口语四大评分标准</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {[
+              { key: 'fluencyCoherence', name: '流利度与连贯性 (FC)', desc: '语速自然、表达连贯、逻辑清晰', score: evaluation.averageScores?.fluencyCoherence },
+              { key: 'lexicalResource', name: '词汇丰富度 (LR)', desc: '词汇多样性、用词精准、习语运用', score: evaluation.averageScores?.lexicalResource },
+              { key: 'grammaticalRange', name: '语法多样性 (GRA)', desc: '句式变化、语法准确、复杂结构', score: evaluation.averageScores?.grammaticalRange },
+              { key: 'pronunciation', name: '发音准确度 (P)', desc: '语音清晰、语调自然、节奏得当', score: evaluation.averageScores?.pronunciation },
+            ].map((item) => (
+              <div key={item.key} className="p-3 bg-slate-50 rounded-lg">
+                <div className="flex justify-between mb-1">
+                  <div>
+                    <span className="font-medium">{item.name}</span>
+                    <p className="text-xs text-slate-500">{item.desc}</p>
+                  </div>
+                  <span className={`text-xl font-bold ${getBandColor(item.score || 6.0).split(' ')[0]}`}>
+                    {(item.score || 6.0).toFixed(1)}
+                  </span>
+                </div>
+                <Progress value={((item.score || 6.0) / 9) * 100} className="h-2" />
               </div>
-              <Progress value={((item.score || 6.0) / 9) * 100} className="h-2" />
-            </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 回顾回答 */}
+      {activeTab === 'responses' && (
+        <div className="space-y-4">
+          {evaluation.responses?.map((response: any, index: number) => (
+            <Card key={index}>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">问题 {index + 1} (Part {response.partNumber})</CardTitle>
+                  <Badge className={getBandColor(response.scores?.overall || 6.0)}>
+                    {(response.scores?.overall || 6.0).toFixed(1)}
+                  </Badge>
+                </div>
+                <p className="text-sm text-slate-600 mt-1">{response.questionText}</p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* 转录文本 */}
+                <div>
+                  <Label className="text-xs text-slate-500">您的回答</Label>
+                  <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
+                    {response.transcription || '无转录内容'}
+                  </div>
+                </div>
+                
+                {/* 各项评分 */}
+                <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                  <div className="p-2 bg-blue-50 rounded">
+                    <div className="font-bold text-blue-600">{(response.scores?.fluencyCoherence || 6.0).toFixed(1)}</div>
+                    <div className="text-slate-500">FC</div>
+                  </div>
+                  <div className="p-2 bg-green-50 rounded">
+                    <div className="font-bold text-green-600">{(response.scores?.lexicalResource || 6.0).toFixed(1)}</div>
+                    <div className="text-slate-500">LR</div>
+                  </div>
+                  <div className="p-2 bg-purple-50 rounded">
+                    <div className="font-bold text-purple-600">{(response.scores?.grammaticalRange || 6.0).toFixed(1)}</div>
+                    <div className="text-slate-500">GRA</div>
+                  </div>
+                  <div className="p-2 bg-orange-50 rounded">
+                    <div className="font-bold text-orange-600">{(response.scores?.pronunciation || 6.0).toFixed(1)}</div>
+                    <div className="text-slate-500">P</div>
+                  </div>
+                </div>
+
+                {/* 反馈 */}
+                {response.feedback && (
+                  <div>
+                    <Label className="text-xs text-slate-500">详细反馈</Label>
+                    <div className="mt-1 space-y-2 text-sm">
+                      {response.feedback.fluencyCoherence && (
+                        <div className="p-2 bg-blue-50 rounded"><strong className="text-blue-700">流利度：</strong>{response.feedback.fluencyCoherence}</div>
+                      )}
+                      {response.feedback.lexicalResource && (
+                        <div className="p-2 bg-green-50 rounded"><strong className="text-green-700">词汇：</strong>{response.feedback.lexicalResource}</div>
+                      )}
+                      {response.feedback.grammaticalRange && (
+                        <div className="p-2 bg-purple-50 rounded"><strong className="text-purple-700">语法：</strong>{response.feedback.grammaticalRange}</div>
+                      )}
+                      {response.feedback.pronunciation && (
+                        <div className="p-2 bg-orange-50 rounded"><strong className="text-orange-700">发音：</strong>{response.feedback.pronunciation}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 参考回答 */}
+                {response.modelAnswer && (
+                  <div>
+                    <Label className="text-xs text-slate-500">高分参考回答</Label>
+                    <div className="mt-1 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
+                      {response.modelAnswer}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           ))}
-        </CardContent>
-      </Card>
+        </div>
+      )}
+
+      {/* 改进建议 */}
+      {activeTab === 'improvements' && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Lightbulb className="w-5 h-5 text-amber-500" />
+              改进建议
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {evaluation.responses?.flatMap((response: any, rIndex: number) => 
+              (response.improvements || []).map((improvement: any, iIndex: number) => (
+                <div key={`${rIndex}-${iIndex}`} className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="outline" className="text-amber-700 border-amber-300">
+                      {improvement.area}
+                    </Badge>
+                    <span className="font-medium text-amber-800">{improvement.issue}</span>
+                  </div>
+                  <p className="text-sm text-amber-700 mb-2">{improvement.suggestion}</p>
+                  {improvement.example && (
+                    <div className="text-sm bg-white p-2 rounded border border-amber-100">
+                      <strong>示例：</strong>{improvement.example}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+            
+            {/* 优势总结 */}
+            {evaluation.responses?.some((r: any) => r.strengths?.length > 0) && (
+              <div className="mt-6">
+                <h4 className="font-medium text-green-700 mb-2 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" />
+                  您的优势
+                </h4>
+                <div className="space-y-2">
+                  {evaluation.responses?.flatMap((response: any, rIndex: number) => 
+                    (response.strengths || []).map((strength: string, sIndex: number) => (
+                      <div key={`${rIndex}-${sIndex}`} className="flex items-start gap-2 p-2 bg-green-50 rounded">
+                        <Star className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                        <span className="text-sm text-green-700">{strength}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {(!evaluation.responses || evaluation.responses.length === 0) && (
+              <div className="text-center py-8 text-slate-500">
+                <Lightbulb className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>暂无改进建议</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex gap-4">
         <Button variant="outline" onClick={onRetry} className="flex-1 gap-2">
@@ -1269,11 +1527,202 @@ function HistoryView({ sessions, onBack, onRefresh }: {
   onBack: () => void;
   onRefresh: () => void;
 }) {
+  const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
+  const [viewingSession, setViewingSession] = useState<any | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const toggleSelect = (id: string) => {
+    const newSelected = new Set(selectedSessions);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedSessions(newSelected);
+  };
+
+  const selectAll = () => {
+    if (selectedSessions.size === sessions.length) {
+      setSelectedSessions(new Set());
+    } else {
+      setSelectedSessions(new Set(sessions.map(s => s.id)));
+    }
+  };
+
+  const deleteSelected = async () => {
+    if (selectedSessions.size === 0) return;
+    if (!confirm(`确定删除 ${selectedSessions.size} 条记录？`)) return;
+    
+    setDeleting(true);
+    try {
+      const response = await fetch('/api/history', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: Array.from(selectedSessions) })
+      });
+      
+      if (response.ok) {
+        setSelectedSessions(new Set());
+        onRefresh();
+        toast.success('删除成功');
+      }
+    } catch (error) {
+      toast.error('删除失败');
+    }
+    setDeleting(false);
+  };
+
+  const deleteSession = async (id: string) => {
+    if (!confirm('确定删除此记录？')) return;
+    
+    try {
+      const response = await fetch('/api/history', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [id] })
+      });
+      
+      if (response.ok) {
+        onRefresh();
+        toast.success('删除成功');
+      }
+    } catch (error) {
+      toast.error('删除失败');
+    }
+  };
+
+  const exportData = () => {
+    const data = sessions.map(session => ({
+      testType: session.testType,
+      date: session.startedAt,
+      bandScore: session.bandScore,
+      responses: session.responses || []
+    }));
+    
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ielts-history-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('导出成功');
+  };
+
+  const viewSessionDetails = async (sessionId: string) => {
+    try {
+      const response = await fetch(`/api/history/${sessionId}`);
+      const data = await response.json();
+      if (data.success) {
+        setViewingSession(data.session);
+      }
+    } catch (error) {
+      toast.error('获取详情失败');
+    }
+  };
+
+  // 查看详情页面
+  if (viewingSession) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold">练习详情</h2>
+          <Button variant="ghost" onClick={() => setViewingSession(null)}>
+            <ChevronLeft className="w-4 h-4 mr-2" /> 返回
+          </Button>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>
+                {viewingSession.testType === 'full' ? '完整测试' : `Part ${viewingSession.testType.replace('part', '')} 练习`}
+              </CardTitle>
+              {viewingSession.bandScore && (
+                <Badge className={getBandColor(viewingSession.bandScore)}>
+                  {viewingSession.bandScore.toFixed(1)}
+                </Badge>
+              )}
+            </div>
+            <CardDescription>
+              {new Date(viewingSession.startedAt).toLocaleString('zh-CN')}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+
+        {/* 回答列表 */}
+        <div className="space-y-4">
+          {viewingSession.responses?.map((response: any, index: number) => (
+            <Card key={index}>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">问题 {index + 1} (Part {response.partNumber})</CardTitle>
+                  <Badge className={getBandColor(response.overallScore || 6.0)}>
+                    {(response.overallScore || 6.0).toFixed(1)}
+                  </Badge>
+                </div>
+                <p className="text-sm text-slate-600">{response.questionText}</p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <Label className="text-xs text-slate-500">您的回答</Label>
+                  <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
+                    {response.transcription || '无记录'}
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                  <div className="p-2 bg-blue-50 rounded">
+                    <div className="font-bold text-blue-600">{(response.fluencyScore || 6.0).toFixed(1)}</div>
+                    <div className="text-slate-500">FC</div>
+                  </div>
+                  <div className="p-2 bg-green-50 rounded">
+                    <div className="font-bold text-green-600">{(response.vocabularyScore || 6.0).toFixed(1)}</div>
+                    <div className="text-slate-500">LR</div>
+                  </div>
+                  <div className="p-2 bg-purple-50 rounded">
+                    <div className="font-bold text-purple-600">{(response.grammarScore || 6.0).toFixed(1)}</div>
+                    <div className="text-slate-500">GRA</div>
+                  </div>
+                  <div className="p-2 bg-orange-50 rounded">
+                    <div className="font-bold text-orange-600">{(response.pronunciationScore || 6.0).toFixed(1)}</div>
+                    <div className="text-slate-500">P</div>
+                  </div>
+                </div>
+
+                {response.modelAnswer && (
+                  <div>
+                    <Label className="text-xs text-slate-500">参考回答</Label>
+                    <div className="mt-1 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
+                      {response.modelAnswer}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">历史记录</h2>
         <div className="flex gap-2">
+          {sessions.length > 0 && (
+            <>
+              <Button variant="outline" size="sm" onClick={exportData}>
+                <Download className="w-4 h-4 mr-2" /> 导出
+              </Button>
+              {selectedSessions.size > 0 && (
+                <Button variant="destructive" size="sm" onClick={deleteSelected} disabled={deleting}>
+                  <Trash2 className="w-4 h-4 mr-2" /> 删除 ({selectedSessions.size})
+                </Button>
+              )}
+            </>
+          )}
           <Button variant="outline" size="sm" onClick={onRefresh}>
             <RefreshCw className="w-4 h-4 mr-2" /> 刷新
           </Button>
@@ -1291,25 +1740,55 @@ function HistoryView({ sessions, onBack, onRefresh }: {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
-          {sessions.map((session) => (
-            <Card key={session.id} className="hover:shadow-md transition-shadow cursor-pointer">
-              <CardContent className="pt-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold">{session.testType === 'full' ? '完整测试' : `Part ${session.testType.replace('part', '')} 练习`}</p>
-                    <p className="text-sm text-slate-500">{new Date(session.startedAt).toLocaleString('zh-CN')}</p>
-                  </div>
-                  {session.bandScore && (
-                    <div className={`text-2xl font-bold px-3 py-1 rounded ${getBandColor(session.bandScore)}`}>
-                      {session.bandScore.toFixed(1)}
+        <>
+          {/* 全选 */}
+          <div className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={selectedSessions.size === sessions.length && sessions.length > 0}
+              onChange={selectAll}
+              className="w-4 h-4"
+            />
+            <span className="text-slate-600">全选 ({sessions.length} 条记录)</span>
+          </div>
+
+          <div className="space-y-3">
+            {sessions.map((session) => (
+              <Card key={session.id} className={`hover:shadow-md transition-shadow ${selectedSessions.has(session.id) ? 'ring-2 ring-blue-500' : ''}`}>
+                <CardContent className="pt-4">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedSessions.has(session.id)}
+                      onChange={() => toggleSelect(session.id)}
+                      className="w-4 h-4"
+                    />
+                    <div 
+                      className="flex-1 cursor-pointer"
+                      onClick={() => viewSessionDetails(session.id)}
+                    >
+                      <p className="font-semibold">{session.testType === 'full' ? '完整测试' : `Part ${session.testType.replace('part', '')} 练习`}</p>
+                      <p className="text-sm text-slate-500">{new Date(session.startedAt).toLocaleString('zh-CN')}</p>
                     </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                    {session.bandScore && (
+                      <div className={`text-2xl font-bold px-3 py-1 rounded ${getBandColor(session.bandScore)}`}>
+                        {session.bandScore.toFixed(1)}
+                      </div>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => { e.stopPropagation(); deleteSession(session.id); }}
+                      className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

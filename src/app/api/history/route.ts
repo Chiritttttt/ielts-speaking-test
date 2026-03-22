@@ -20,7 +20,9 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             partNumber: true,
-            overallScore: true
+            overallScore: true,
+            questionText: true,
+            transcription: true
           }
         }
       },
@@ -53,13 +55,28 @@ export async function GET(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const sessionId = searchParams.get('sessionId');
-    const clearAll = searchParams.get('clearAll');
+    const body = await request.json();
+    const { ids, sessionId, clearAll, userId } = body;
 
-    if (clearAll === 'true') {
-      const userId = searchParams.get('userId');
+    // 批量删除
+    if (ids && Array.isArray(ids) && ids.length > 0) {
+      // 先删除关联的回答
+      await db.speakingResponse.deleteMany({
+        where: { sessionId: { in: ids } }
+      });
+      // 再删除会话
+      await db.testSession.deleteMany({
+        where: { id: { in: ids } }
+      });
+      return NextResponse.json({ success: true, message: `${ids.length} 条记录已删除` });
+    }
+
+    // 清空所有
+    if (clearAll) {
       if (userId && !userId.startsWith('guest')) {
+        await db.speakingResponse.deleteMany({
+          where: { session: { userId } }
+        });
         await db.testSession.deleteMany({
           where: { userId }
         });
@@ -67,7 +84,11 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'All sessions deleted' });
     }
 
+    // 删除单个
     if (sessionId) {
+      await db.speakingResponse.deleteMany({
+        where: { sessionId }
+      });
       await db.testSession.delete({
         where: { id: sessionId }
       });
