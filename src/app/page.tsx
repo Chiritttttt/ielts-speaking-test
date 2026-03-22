@@ -458,6 +458,7 @@ export default function IELTSSpeakingApp() {
             partNumber: data.responses[0].partNumber || currentPart,
             questionText: data.responses[0].questionText,
             transcription: data.responses[0].transcription,
+            audioBase64: data.responses[0].audioBase64,
             duration: data.responses[0].duration,
             scores: data.responses[0].scores,
             feedback: data.responses[0].feedback,
@@ -556,6 +557,7 @@ export default function IELTSSpeakingApp() {
             partNumber: data.responses[0].partNumber || t.partNumber,
             questionText: data.responses[0].questionText,
             transcription: data.responses[0].transcription,
+            audioBase64: data.responses[0].audioBase64,
             duration: data.responses[0].duration,
             scores: data.responses[0].scores,
             feedback: data.responses[0].feedback,
@@ -1281,12 +1283,24 @@ function TestView({
                   停止录音
                 </Button>
               ) : (
-                <Button onClick={onStartRecording} size="lg" className="gap-2 bg-[#E31837] hover:bg-[#C4142D]">
+                <Button 
+                  onClick={onStartRecording} 
+                  size="lg" 
+                  className="gap-2 bg-[#E31837] hover:bg-[#C4142D]"
+                  disabled={isPlayingAudio}
+                >
                   <Mic className="w-5 h-5" />
                   开始录音
                 </Button>
               )}
             </div>
+            
+            {isPlayingAudio && !isRecording && (
+              <p className="text-sm text-amber-600 flex items-center gap-2">
+                <Volume2 className="w-4 h-4" />
+                音频播放中，请等待播放完毕后再录音
+              </p>
+            )}
 
             <p className="text-xs text-slate-500 text-center">
               点击"开始录音"后，请对着麦克风清晰回答问题
@@ -1304,6 +1318,67 @@ function TestView({
         </CardFooter>
       </Card>
     </div>
+  );
+}
+
+// Audio Player Component
+function AudioPlayer({ audioBase64 }: { audioBase64?: string }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const playAudio = () => {
+    if (!audioBase64) return;
+    
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      setIsPlaying(false);
+      return;
+    }
+
+    try {
+      const audio = new Audio(`data:audio/webm;base64,${audioBase64}`);
+      audioRef.current = audio;
+      
+      audio.onended = () => {
+        setIsPlaying(false);
+        audioRef.current = null;
+      };
+      
+      audio.onerror = () => {
+        setIsPlaying(false);
+        audioRef.current = null;
+        toast.error('音频播放失败');
+      };
+      
+      audio.play();
+      setIsPlaying(true);
+    } catch (error) {
+      toast.error('无法播放音频');
+    }
+  };
+
+  if (!audioBase64) return null;
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={playAudio}
+      className="gap-1"
+    >
+      {isPlaying ? (
+        <>
+          <Square className="w-4 h-4" />
+          停止
+        </>
+      ) : (
+        <>
+          <Volume2 className="w-4 h-4" />
+          听录音
+        </>
+      )}
+    </Button>
   );
 }
 
@@ -1409,7 +1484,10 @@ function ResultView({ evaluation, onNext, onRetry }: {
               <CardContent className="space-y-4">
                 {/* 转录文本 */}
                 <div>
-                  <Label className="text-xs text-slate-500">您的回答</Label>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label className="text-xs text-slate-500">您的回答</Label>
+                    <AudioPlayer audioBase64={response.audioBase64} />
+                  </div>
                   <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
                     {response.transcription || '无转录内容'}
                   </div>
@@ -1686,7 +1764,10 @@ function HistoryView({ sessions, onBack, onRefresh }: {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
-                  <Label className="text-xs text-slate-500">您的回答</Label>
+                  <div className="flex items-center justify-between mb-1">
+                    <Label className="text-xs text-slate-500">您的回答</Label>
+                    <AudioPlayer audioBase64={response.audioBase64} />
+                  </div>
                   <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
                     {response.transcription || '无记录'}
                   </div>

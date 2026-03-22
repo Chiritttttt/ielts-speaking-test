@@ -38,6 +38,7 @@ export async function GET(
           partNumber: r.partNumber,
           questionText: r.questionText,
           transcription: r.transcription,
+          audioBase64: r.audioBase64,
           duration: r.duration,
           fluencyScore: r.fluencyScore,
           vocabularyScore: r.vocabularyScore,

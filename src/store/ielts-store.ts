@@ -29,6 +29,7 @@ export interface ResponseData {
   partNumber: number;
   questionText: string;
   transcription: string;
+  audioBase64?: string;
   duration: number;
   scores: {
     fluencyCoherence: number;
