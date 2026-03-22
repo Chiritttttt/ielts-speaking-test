@@ -43,8 +43,7 @@ export async function POST(request: NextRequest) {
       .substring(0, 2000)
       .replace(/\n/g, ' ')  // 换行符替换为空格
       .replace(/\r/g, '')   // 移除回车符
-      .replace(/"/g, '\\"') // 转义双引号
-      .replace(/'/g, "\\'"); // 转义单引号
+      .replace(/"/g, '\\"'); // 只转义双引号（单引号/撇号不需要转义，因为在双引号内）
     
     const command = `edge-tts --voice "${edgeVoice}" --text "${processedText}" --write-media "${outputPath}" --rate="${rateArg}"`;
 
