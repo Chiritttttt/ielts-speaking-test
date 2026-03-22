@@ -38,10 +38,18 @@ export async function POST(request: NextRequest) {
     const rate = Math.round((speed - 1) * 100);
     const rateArg = rate >= 0 ? `+${rate}%` : `${rate}%`;
     
-    const command = `edge-tts --voice "${edgeVoice}" --text "${text.substring(0, 2000).replace(/"/g, '\\"')}" --write-media "${outputPath}" --rate="${rateArg}"`;
+    // 处理文本：将换行符替换为空格，并转义特殊字符
+    const processedText = text
+      .substring(0, 2000)
+      .replace(/\n/g, ' ')  // 换行符替换为空格
+      .replace(/\r/g, '')   // 移除回车符
+      .replace(/"/g, '\\"') // 转义双引号
+      .replace(/'/g, "\\'"); // 转义单引号
+    
+    const command = `edge-tts --voice "${edgeVoice}" --text "${processedText}" --write-media "${outputPath}" --rate="${rateArg}"`;
 
     try {
-      await execAsync(command, { timeout: 30000 });
+      await execAsync(command, { timeout: 60000 });  // 增加超时时间到60秒
       
       const audioBuffer = await readFile(outputPath);
       

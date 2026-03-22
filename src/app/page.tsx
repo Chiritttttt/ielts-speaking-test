@@ -359,19 +359,24 @@ export default function IELTSSpeakingApp() {
       
       if (data.success && data.transcription && data.transcription.trim().length > 0) {
         processTranscription(data.transcription, base64);
-      } else if (webSpeechBackup && webSpeechBackup.trim().length > 5) {
+      } else if (webSpeechBackup && webSpeechBackup.trim().length > 1) {
         toast.info('使用浏览器语音识别结果');
         processTranscription(webSpeechBackup, base64);
       } else {
-        toast.error('语音识别失败: ' + (data.error || '未检测到语音'));
+        const errorMsg = data.error || '未检测到语音';
+        if (errorMsg.includes('No audio') || errorMsg.includes('empty')) {
+          toast.error('录音时间太短或没有声音，请重新录音');
+        } else {
+          toast.error('语音识别失败: ' + errorMsg);
+        }
         setIsLoading(false);
       }
     } catch (error) {
-      if (webSpeechBackup && webSpeechBackup.trim().length > 5) {
+      if (webSpeechBackup && webSpeechBackup.trim().length > 1) {
         toast.info('使用浏览器语音识别结果');
         processTranscription(webSpeechBackup, base64);
       } else {
-        toast.error('语音识别服务出错');
+        toast.error('语音识别服务出错，请检查 Whisper 服务是否启动');
         setIsLoading(false);
       }
     }
