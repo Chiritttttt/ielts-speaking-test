@@ -18,42 +18,10 @@ const EDGE_VOICES: Record<string, string> = {
   'fable': 'en-GB-MiaNeural'
 };
 
-// 查找 edge-tts 命令
-function getEdgeTTSCommand(): string {
-  // 优先使用环境变量指定的路径
-  if (process.env.EDGE_TTS_PATH) {
-    return process.env.EDGE_TTS_PATH;
-  }
-  
-  // 尝试常见的安装位置
-  const possiblePaths = [
-    '/home/z/.local/bin/edge-tts',
-    `${process.env.HOME}/.local/bin/edge-tts`,
-    '/usr/local/bin/edge-tts',
-    '/usr/bin/edge-tts',
-    'edge-tts' // 使用系统 PATH
-  ];
-  
-  // 返回第一个可能存在的路径（在运行时检测）
-  return possiblePaths[0];
-}
-
-// 处理文本，添加自然停顿
-function preprocessText(text: string): string {
-  let processed = text
-    .replace(/\n[-•]\s*/g, '. ')   // 换行+列表符号 → 句号+空格
-    .replace(/\n+/g, '. ')          // 换行 → 句号+空格
-    .replace(/\. and\s+/gi, '. ')   // 移除开头的 "and"
-    .replace(/\s+/g, ' ')
-    .trim();
-  
-  return processed;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { text, voice = 'us-female', speed = 0.85 } = body;
+    const { text, voice = 'us-female', speed = 1.0 } = body;
 
     if (!text) {
       return NextResponse.json({
@@ -66,44 +34,28 @@ export async function POST(request: NextRequest) {
     const uuid = randomUUID();
     const outputPath = join(tmpdir(), `tts-${uuid}.mp3`);
 
-    // 计算语速参数
+    // 使用 edge-tts 命令行工具
     const rate = Math.round((speed - 1) * 100);
     const rateArg = rate >= 0 ? `+${rate}%` : `${rate}%`;
     
-    // 预处理文本
-    const processedText = preprocessText(text.substring(0, 2000));
-    const escapedText = processedText.replace(/"/g, '\\"');
+    // 处理文本：将换行符替换为空格，并转义特殊字符
+    const processedText = text
+      .substring(0, 2000)
+      .replace(/\n/g, ' ')  // 换行符替换为空格
+      .replace(/\r/g, '')   // 移除回车符
+      .replace(/"/g, '\\"'); // 只转义双引号（单引号/撇号不需要转义，因为在双引号内）
     
-    console.log(`[TTS] Text: "${escapedText.substring(0, 100)}..."`);
-    console.log(`[TTS] Voice: ${edgeVoice}, Rate: ${rateArg}`);
-
-    // 获取 edge-tts 命令路径
-    const edgeTTSPath = process.env.EDGE_TTS_PATH || getEdgeTTSCommand();
-    
-    // 环境变量
-    const execEnv = {
-      ...process.env,
-      PATH: `${process.env.HOME}/.local/bin:/usr/local/bin:/usr/bin:${process.env.PATH || ''}`
-    };
+    const command = `edge-tts --voice "${edgeVoice}" --text "${processedText}" --write-media "${outputPath}" --rate="${rateArg}"`;
 
     try {
-      const command = `${edgeTTSPath} --voice "${edgeVoice}" --text "${escapedText}" --write-media "${outputPath}" --rate="${rateArg}"`;
+      await execAsync(command, { timeout: 60000 });  // 增加超时时间到60秒
       
-      console.log(`[TTS] Executing: ${edgeTTSPath}`);
-      
-      const { stderr } = await execAsync(command, { 
-        timeout: 60000, 
-        env: execEnv 
-      });
-      
-      if (stderr && stderr.includes('Error')) {
-        console.error('[TTS] stderr:', stderr);
-      }
-
       const audioBuffer = await readFile(outputPath);
-      console.log(`[TTS] Audio generated: ${audioBuffer.byteLength} bytes`);
       
-      try { await unlink(outputPath); } catch {}
+      // 清理临时文件
+      try {
+        await unlink(outputPath);
+      } catch {}
       
       return new NextResponse(audioBuffer, {
         headers: {
@@ -111,20 +63,18 @@ export async function POST(request: NextRequest) {
           'Content-Length': audioBuffer.byteLength.toString()
         }
       });
-    } catch (execError: any) {
-      console.error('[TTS] Error:', execError.message);
+    } catch (execError) {
+      console.error('Edge TTS exec error:', execError);
       
-      try { await unlink(outputPath); } catch {}
-      
+      // 如果 edge-tts 命令失败，返回错误
       return NextResponse.json({
         success: false,
-        error: '语音服务暂时不可用，请确保已安装 edge-tts',
-        details: execError.message
+        error: 'Edge TTS 服务不可用，请确保已安装 edge-tts: pip install edge-tts'
       }, { status: 503 });
     }
 
-  } catch (error: any) {
-    console.error('[TTS] Error:', error);
+  } catch (error) {
+    console.error('TTS error:', error);
     return NextResponse.json({
       success: false,
       error: 'TTS generation failed'
