@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
     serverActions: {
       bodySizeLimit: '50mb',
     },
+    // Disable turbopack for production build
+    turbo: undefined,
   },
 };
 

@@ -288,3 +288,89 @@ export function getEvaluationPrompt(partNumber: number): string {
 
 // 兼容旧的常量名
 export const IELTS_EVALUATION_PROMPT = IELTS_PART1_EVALUATION_PROMPT(1);
+
+// ============ 题目生成 Prompts ============
+
+// Part 1 题目生成 Prompt - 难度递进：身份认知 → 偏好表达 → 变化比较
+export function PART1_GENERATION_PROMPT(topic: string, count: number): string {
+  return `Generate ${count} IELTS Speaking Part 1 questions about "${topic}".
+
+## Part 1 Question Difficulty Progression:
+Part 1 questions should follow this natural progression:
+
+**Easy Level (1-2 questions)**: Identity/Fact-based questions
+- Focus on the candidate themselves ("you", "your")
+- Simple present tense, personal information
+- Examples: "Where are you from?", "Do you work or study?", "What do you do?"
+
+**Medium Level (2-3 questions)**: Preference/Opinion questions
+- Express preferences, likes/dislikes
+- Use phrases like "What do you enjoy...", "Do you prefer...", "What's your favorite..."
+- Examples: "What do you enjoy most about your job?", "Do you prefer working alone or in a team?"
+
+**Hard Level (1-2 questions)**: Change/Comparison questions
+- Past vs present, changes over time
+- Future possibilities, hypothetical situations
+- Examples: "Has your hometown changed much?", "How is your job different from what you expected?"
+
+## Response Format (JSON only, no markdown):
+{
+  "questions": [
+    {"question": "<question text>", "difficulty": "easy|medium|hard"}
+  ]
+}`;
+}
+
+// Part 2 题目生成 Prompt - Cue Card 结构
+export function PART2_GENERATION_PROMPT(topic: string, count: number): string {
+  return `Generate ${count} IELTS Speaking Part 2 cue card topics about "${topic}".
+
+## Part 2 Cue Card Structure:
+Each cue card must have:
+1. **Main topic statement**: "Describe a/the..."
+2. **4 bullet points**: Guide what to include
+   - What/Who/When/Where (factual)
+   - Details about the topic
+   - What happened/What you did
+   - Explain why/How you felt (extended response)
+
+## Response Format (JSON only, no markdown):
+{
+  "questions": [
+    {
+      "question": "Describe [a specific topic].\n\nYou should say:\n- [bullet 1: what/who/when/where]\n- [bullet 2: details]\n- [bullet 3: what happened/did]\n- and explain [bullet 4: why/how you felt].",
+      "difficulty": "medium"
+    }
+  ]
+}`;
+}
+
+// Part 3 题目生成 Prompt - 从具体到抽象的讨论
+export function PART3_GENERATION_PROMPT(topic: string, count: number): string {
+  return `Generate ${count} IELTS Speaking Part 3 discussion questions about "${topic}".
+
+## Part 3 Question Difficulty Progression:
+Part 3 questions should progress from specific to abstract:
+
+**Easy Level (1 question)**: Direct extension of Part 2 topic
+- About the specific topic type
+- "What makes a good...", "Why do people..."
+- Example: "What makes a memorable trip?"
+
+**Medium Level (2 questions)**: Broader social/cultural context
+- Compare past/present, different groups
+- "How has... changed", "Do you think... is different for..."
+- Example: "How has travel changed in your country over the past 20 years?"
+
+**Hard Level (1-2 questions)**: Abstract/General/Philosophical
+- Society-wide implications, future predictions
+- "To what extent...", "What role should...", "How might... affect society"
+- Example: "To what extent should governments promote domestic tourism?"
+
+## Response Format (JSON only, no markdown):
+{
+  "questions": [
+    {"question": "<question text>", "difficulty": "easy|medium|hard"}
+  ]
+}`;
+}
