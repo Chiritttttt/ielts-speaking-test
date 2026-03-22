@@ -327,18 +327,34 @@ export function PART2_GENERATION_PROMPT(topic: string, count: number): string {
 
 ## Part 2 Cue Card Structure:
 Each cue card must have:
-1. **Main topic statement**: "Describe a/the..."
-2. **4 bullet points**: Guide what to include
+1. **Main topic statement**: "Describe a/the..." (on its own line)
+2. **An empty line** after the main topic
+3. **"You should say:"** on its own line
+4. **4 bullet points**: Each on a new line starting with "- "
    - What/Who/When/Where (factual)
    - Details about the topic
    - What happened/What you did
    - Explain why/How you felt (extended response)
 
+## Format Example (important for TTS readability):
+"Describe a memorable trip you have taken.
+
+You should say:
+- where you went
+- who you went with
+- what you did during the trip
+- and explain why this trip was memorable for you."
+
+NOTICE:
+- Use newlines between sections for natural pauses when read aloud
+- Each bullet point on its own line
+- Keep bullet points concise (5-10 words each)
+
 ## Response Format (JSON only, no markdown):
 {
   "questions": [
     {
-      "question": "Describe [a specific topic].\n\nYou should say:\n- [bullet 1: what/who/when/where]\n- [bullet 2: details]\n- [bullet 3: what happened/did]\n- and explain [bullet 4: why/how you felt].",
+      "question": "Describe [a specific topic].\\n\\nYou should say:\\n- [bullet 1: what/who/when/where]\\n- [bullet 2: details]\\n- [bullet 3: what happened/did]\\n- and explain [bullet 4: why/how you felt].",
       "difficulty": "medium"
     }
   ]

@@ -1430,10 +1430,19 @@ function AudioPlayer({ audioBase64, audioId, duration, showDownload = false, onG
     const loadModelAudio = async () => {
       if (modelAnswerAudioId) {
         try {
-          const blob = await indexedDBAudio.getModelAnswerAudio(modelAnswerAudioId.split('-')[0], modelAnswerAudioId.split('-')[1] || modelAnswerAudioId.split('-').slice(1).join('-'));
-          if (blob) {
-            setModelAudioBlob(blob);
-            console.log('[AudioPlayer] Loaded model answer audio from IndexedDB:', modelAnswerAudioId);
+          // modelAnswerAudioId 格式: sessionId-responseId-model
+          // 需要正确解析
+          const parts = modelAnswerAudioId.split('-');
+          if (parts.length >= 2) {
+            const sid = parts[0];
+            const rid = parts.slice(1).join('-'); // 处理 responseId 可能包含 '-' 的情况
+            const blob = await indexedDBAudio.getModelAnswerAudio(sid, rid);
+            if (blob) {
+              setModelAudioBlob(blob);
+              console.log('[AudioPlayer] Loaded model answer audio from IndexedDB:', modelAnswerAudioId);
+            } else {
+              console.log('[AudioPlayer] No model answer audio found for:', modelAnswerAudioId);
+            }
           }
         } catch (err) {
           console.error('[AudioPlayer] Failed to load model audio from IndexedDB:', err);
@@ -1722,7 +1731,7 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
         body: JSON.stringify({
           text: modelAnswer,
           voice: selectedVoice,
-          speed: 1.0
+          speed: 0.85  // 降低语速，更自然
         })
       });
 
@@ -1759,9 +1768,10 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
       exampleAudioRef.current = null;
     }
     
-    // 检查是否已缓存
-    if (exampleAudioUrls[key]) {
-      const audio = new Audio(exampleAudioUrls[key]);
+    // 检查是否已缓存（使用带口音的 key）
+    const cacheKey = `${key}_${selectedVoice}`;
+    if (exampleAudioUrls[cacheKey]) {
+      const audio = new Audio(exampleAudioUrls[cacheKey]);
       exampleAudioRef.current = audio;
       audio.onended = () => setPlayingExample(null);
       audio.play();
@@ -1777,7 +1787,7 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
         body: JSON.stringify({
           text: exampleText,
           voice: selectedVoice,
-          speed: 1.0
+          speed: 0.85  // 降低语速，更自然
         })
       });
 
@@ -1786,8 +1796,8 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
       
-      // 缓存
-      setExampleAudioUrls(prev => ({ ...prev, [key]: audioUrl }));
+      // 缓存（使用带口音的 key）
+      setExampleAudioUrls(prev => ({ ...prev, [cacheKey]: audioUrl }));
       
       const audio = new Audio(audioUrl);
       exampleAudioRef.current = audio;
@@ -2200,7 +2210,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
         body: JSON.stringify({
           text: modelAnswer,
           voice: selectedVoice,
-          speed: 1.0
+          speed: 0.85  // 降低语速，更自然
         })
       });
 
@@ -2237,9 +2247,10 @@ function HistoryView({ sessions, onBack, onRefresh }: {
       exampleAudioRef.current = null;
     }
     
-    // 检查是否已缓存
-    if (exampleAudioUrls[key]) {
-      const audio = new Audio(exampleAudioUrls[key]);
+    // 检查是否已缓存（使用带口音的 key）
+    const cacheKey = `${key}_${selectedVoice}`;
+    if (exampleAudioUrls[cacheKey]) {
+      const audio = new Audio(exampleAudioUrls[cacheKey]);
       exampleAudioRef.current = audio;
       audio.onended = () => setPlayingExample(null);
       audio.play();
@@ -2255,7 +2266,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
         body: JSON.stringify({
           text: exampleText,
           voice: selectedVoice,
-          speed: 1.0
+          speed: 0.85  // 降低语速，更自然
         })
       });
 
@@ -2264,8 +2275,8 @@ function HistoryView({ sessions, onBack, onRefresh }: {
       const audioBlob = await response.blob();
       const audioUrl = URL.createObjectURL(audioBlob);
       
-      // 缓存
-      setExampleAudioUrls(prev => ({ ...prev, [key]: audioUrl }));
+      // 缓存（使用带口音的 key）
+      setExampleAudioUrls(prev => ({ ...prev, [cacheKey]: audioUrl }));
       
       const audio = new Audio(audioUrl);
       exampleAudioRef.current = audio;
@@ -2489,19 +2500,21 @@ function HistoryView({ sessions, onBack, onRefresh }: {
 
           <div className="space-y-3">
             {sessions.map((session) => (
-              <Card key={session.id} className={`hover:shadow-md transition-shadow ${selectedSessions.has(session.id) ? 'ring-2 ring-blue-500' : ''}`}>
+              <Card 
+                key={session.id} 
+                className={`hover:shadow-md transition-shadow cursor-pointer ${selectedSessions.has(session.id) ? 'ring-2 ring-blue-500' : ''}`}
+                onClick={() => viewSessionDetails(session.id)}
+              >
                 <CardContent className="pt-4">
                   <div className="flex items-center gap-3">
                     <input
                       type="checkbox"
                       checked={selectedSessions.has(session.id)}
-                      onChange={() => toggleSelect(session.id)}
+                      onChange={(e) => { e.stopPropagation(); toggleSelect(session.id); }}
+                      onClick={(e) => e.stopPropagation()}
                       className="w-4 h-4"
                     />
-                    <div 
-                      className="flex-1 cursor-pointer"
-                      onClick={() => viewSessionDetails(session.id)}
-                    >
+                    <div className="flex-1">
                       <p className="font-semibold">{session.testType === 'full' ? '完整测试' : `Part ${session.testType.replace('part', '')} 练习`}</p>
                       <p className="text-sm text-slate-500">{new Date(session.startedAt).toLocaleString('zh-CN')}</p>
                     </div>
