@@ -1143,18 +1143,22 @@ function TestView({
       
       audio.onerror = () => {
         setIsPlayingAudio(false);
-        setAudioError('音频播放失败');
-        // 播放失败时显示题目
-        setShowQuestion(true);
+        setAudioError('音频播放失败，请点击"显示"按钮查看题目');
+        // 播放失败时也遵循设置：只有设置开启时才自动显示
+        if (settings.showQuestionAfterSpeech) {
+          setShowQuestion(true);
+        }
       };
       
       await audio.play();
     } catch (error) {
       console.error('Audio play error:', error);
       setIsPlayingAudio(false);
-      setAudioError('语音服务暂时不可用');
-      // 播放失败时显示题目
-      setShowQuestion(true);
+      setAudioError('语音服务暂时不可用，请点击"显示"按钮查看题目');
+      // 服务失败时也遵循设置：只有设置开启时才自动显示
+      if (settings.showQuestionAfterSpeech) {
+        setShowQuestion(true);
+      }
     }
   }, [currentQuestion?.questionText, settings.defaultVoice, settings.voiceSpeed, settings.showQuestionAfterSpeech]);
 
