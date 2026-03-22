@@ -8,16 +8,6 @@ import { randomUUID } from 'crypto';
 
 const execAsync = promisify(exec);
 
-// Edge TTS 命令路径
-const EDGE_TTS_PATH = '/home/z/.local/bin/edge-tts';
-
-// 环境变量设置
-const EXEC_ENV = {
-  ...process.env,
-  PATH: `/home/z/.local/bin:/usr/local/bin:${process.env.PATH || ''}`,
-  HOME: process.env.HOME || '/home/z'
-};
-
 // Edge TTS 语音映射
 const EDGE_VOICES: Record<string, string> = {
   'us-female': 'en-US-AriaNeural',
@@ -28,16 +18,32 @@ const EDGE_VOICES: Record<string, string> = {
   'fable': 'en-GB-MiaNeural'
 };
 
-// 处理文本，添加自然停顿标记
+// 查找 edge-tts 命令
+function getEdgeTTSCommand(): string {
+  // 优先使用环境变量指定的路径
+  if (process.env.EDGE_TTS_PATH) {
+    return process.env.EDGE_TTS_PATH;
+  }
+  
+  // 尝试常见的安装位置
+  const possiblePaths = [
+    '/home/z/.local/bin/edge-tts',
+    `${process.env.HOME}/.local/bin/edge-tts`,
+    '/usr/local/bin/edge-tts',
+    '/usr/bin/edge-tts',
+    'edge-tts' // 使用系统 PATH
+  ];
+  
+  // 返回第一个可能存在的路径（在运行时检测）
+  return possiblePaths[0];
+}
+
+// 处理文本，添加自然停顿
 function preprocessText(text: string): string {
-  // 处理列表项
   let processed = text
-    // 处理换行后的列表项，添加逗号让 TTS 停顿
-    .replace(/\n[-•]\s*/g, '. ')  // 换行+列表符号 → 句号+空格
-    .replace(/\n+/g, '. ')         // 换行 → 句号+空格
-    // 移除开头的 "and "（列表项最后一个）
-    .replace(/\. and\s+/gi, '. ')
-    // 清理多余空格
+    .replace(/\n[-•]\s*/g, '. ')   // 换行+列表符号 → 句号+空格
+    .replace(/\n+/g, '. ')          // 换行 → 句号+空格
+    .replace(/\. and\s+/gi, '. ')   // 移除开头的 "and"
     .replace(/\s+/g, ' ')
     .trim();
   
@@ -60,40 +66,44 @@ export async function POST(request: NextRequest) {
     const uuid = randomUUID();
     const outputPath = join(tmpdir(), `tts-${uuid}.mp3`);
 
-    // 计算语速参数 (edge-tts 格式: -50% to +100%)
+    // 计算语速参数
     const rate = Math.round((speed - 1) * 100);
     const rateArg = rate >= 0 ? `+${rate}%` : `${rate}%`;
     
     // 预处理文本
     const processedText = preprocessText(text.substring(0, 2000));
-    
-    // 转义双引号
     const escapedText = processedText.replace(/"/g, '\\"');
     
     console.log(`[TTS] Text: "${escapedText.substring(0, 100)}..."`);
     console.log(`[TTS] Voice: ${edgeVoice}, Rate: ${rateArg}`);
 
+    // 获取 edge-tts 命令路径
+    const edgeTTSPath = process.env.EDGE_TTS_PATH || getEdgeTTSCommand();
+    
+    // 环境变量
+    const execEnv = {
+      ...process.env,
+      PATH: `${process.env.HOME}/.local/bin:/usr/local/bin:/usr/bin:${process.env.PATH || ''}`
+    };
+
     try {
-      // 使用 edge-tts 命令行工具
-      const command = `${EDGE_TTS_PATH} --voice "${edgeVoice}" --text "${escapedText}" --write-media "${outputPath}" --rate="${rateArg}"`;
+      const command = `${edgeTTSPath} --voice "${edgeVoice}" --text "${escapedText}" --write-media "${outputPath}" --rate="${rateArg}"`;
       
-      const { stdout, stderr } = await execAsync(command, { 
+      console.log(`[TTS] Executing: ${edgeTTSPath}`);
+      
+      const { stderr } = await execAsync(command, { 
         timeout: 60000, 
-        env: EXEC_ENV 
+        env: execEnv 
       });
       
       if (stderr && stderr.includes('Error')) {
         console.error('[TTS] stderr:', stderr);
       }
 
-      // 读取生成的音频文件
       const audioBuffer = await readFile(outputPath);
       console.log(`[TTS] Audio generated: ${audioBuffer.byteLength} bytes`);
       
-      // 清理临时文件
-      try {
-        await unlink(outputPath);
-      } catch {}
+      try { await unlink(outputPath); } catch {}
       
       return new NextResponse(audioBuffer, {
         headers: {
@@ -102,16 +112,14 @@ export async function POST(request: NextRequest) {
         }
       });
     } catch (execError: any) {
-      console.error('[TTS] Edge TTS error:', execError.message);
+      console.error('[TTS] Error:', execError.message);
       
-      // 清理可能遗留的临时文件
-      try {
-        await unlink(outputPath);
-      } catch {}
+      try { await unlink(outputPath); } catch {}
       
       return NextResponse.json({
         success: false,
-        error: '语音服务暂时不可用，请稍后重试'
+        error: '语音服务暂时不可用，请确保已安装 edge-tts',
+        details: execError.message
       }, { status: 503 });
     }
 
