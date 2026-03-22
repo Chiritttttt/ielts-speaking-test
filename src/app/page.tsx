@@ -1116,15 +1116,20 @@ function TestView({
   const [showQuestion, setShowQuestion] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const prevQuestionIdRef = useRef<string | null>(null);
 
   // 播放题目音频
   const playQuestionAudio = useCallback(async () => {
-    if (!currentQuestion?.questionText) return;
+    if (!currentQuestion?.questionText) {
+      console.error('[Audio] No question text');
+      return;
+    }
     
+    console.log('[Audio] Starting to play audio for:', currentQuestion.questionText.substring(0, 50));
     setAudioError(null);
-    setIsPlayingAudio(true);
+    setIsLoadingAudio(true);
     
     try {
       const response = await fetch('/api/tts', {
@@ -1137,11 +1142,21 @@ function TestView({
         })
       });
 
+      console.log('[Audio] TTS response status:', response.status);
+      
       if (!response.ok) {
-        throw new Error('TTS service unavailable');
+        const errorData = await response.json().catch(() => ({}));
+        console.error('[Audio] TTS error:', errorData);
+        throw new Error(errorData.error || `TTS 服务错误: ${response.status}`);
       }
 
       const audioBlob = await response.blob();
+      console.log('[Audio] Received blob size:', audioBlob.size, 'type:', audioBlob.type);
+      
+      if (audioBlob.size < 100) {
+        throw new Error('音频数据太小，可能生成失败');
+      }
+      
       const audioUrl = URL.createObjectURL(audioBlob);
       
       if (audioRef.current) {
@@ -1152,29 +1167,40 @@ function TestView({
       const audio = new Audio(audioUrl);
       audioRef.current = audio;
       
+      audio.oncanplaythrough = () => {
+        console.log('[Audio] Audio can play through');
+        setIsLoadingAudio(false);
+      };
+      
       audio.onended = () => {
+        console.log('[Audio] Audio ended');
         setIsPlayingAudio(false);
-        // 只有当设置"语音播放后显示"时，播放完毕才显示题目
         if (settings.showQuestionAfterSpeech) {
           setShowQuestion(true);
         }
       };
       
-      audio.onerror = () => {
+      audio.onerror = (e) => {
+        console.error('[Audio] Audio error:', e);
         setIsPlayingAudio(false);
+        setIsLoadingAudio(false);
         setAudioError('音频播放失败，请点击"显示"按钮查看题目');
-        // 播放失败时也遵循设置：只有设置开启时才自动显示
         if (settings.showQuestionAfterSpeech) {
           setShowQuestion(true);
         }
       };
+      
+      setIsLoadingAudio(false);
+      setIsPlayingAudio(true);
       
       await audio.play();
-    } catch (error) {
-      console.error('Audio play error:', error);
+      console.log('[Audio] Audio started playing');
+      
+    } catch (error: any) {
+      console.error('[Audio] Play error:', error);
       setIsPlayingAudio(false);
-      setAudioError('语音服务暂时不可用，请点击"显示"按钮查看题目');
-      // 服务失败时也遵循设置：只有设置开启时才自动显示
+      setIsLoadingAudio(false);
+      setAudioError(error.message || '语音服务暂时不可用，请点击"显示"按钮查看题目');
       if (settings.showQuestionAfterSpeech) {
         setShowQuestion(true);
       }
@@ -1187,6 +1213,7 @@ function TestView({
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
       setIsPlayingAudio(false);
+      setIsLoadingAudio(false);
     }
   }, []);
 
@@ -1260,9 +1287,15 @@ function TestView({
                 variant="outline"
                 size="sm"
                 onClick={isPlayingAudio ? stopAudio : playQuestionAudio}
+                disabled={isLoadingAudio}
                 className="gap-1"
               >
-                {isPlayingAudio ? (
+                {isLoadingAudio ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    加载中
+                  </>
+                ) : isPlayingAudio ? (
                   <>
                     <Square className="w-4 h-4" />
                     停止

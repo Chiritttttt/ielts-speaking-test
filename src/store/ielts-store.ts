@@ -84,7 +84,7 @@ export interface ImprovementPlan {
 
 const defaultSettings: AppSettings = {
   defaultVoice: 'us-female',
-  voiceSpeed: 1.0,
+  voiceSpeed: 0.85,  // 更自然的语速
   showQuestionAfterSpeech: false,  // false = 始终隐藏，需手动点击；true = 播放后自动显示
   autoPlayQuestion: true,
 };
