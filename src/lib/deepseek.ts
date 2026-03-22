@@ -313,6 +313,15 @@ Part 1 questions should follow this natural progression:
 - Future possibilities, hypothetical situations
 - Examples: "Has your hometown changed much?", "How is your job different from what you expected?"
 
+## IMPORTANT - TTS-Friendly Format:
+For longer questions (medium/hard level), split into 2 short sentences with a period and space between them.
+This creates natural pauses when read aloud by TTS.
+
+**Example formats**:
+- Short: "Where are you from?"
+- Medium: "Let's talk about your hometown. Where are you from originally?"
+- Long: "I'd like to ask about your favorite music. What kind of music do you enjoy listening to?"
+
 ## Response Format (JSON only, no markdown):
 {
   "questions": [
@@ -345,16 +354,25 @@ You should say:
 - what you did during the trip
 - and explain why this trip was memorable for you."
 
+## IMPORTANT - TTS-Friendly Format:
+The format above creates natural pauses when read aloud:
+- Period after the main topic creates a pause
+- Empty line creates a longer pause
+- "You should say:" acts as a transition marker
+- Each bullet point on its own line creates natural rhythm
+- The final bullet starting with "and explain" signals the conclusion
+
 NOTICE:
 - Use newlines between sections for natural pauses when read aloud
 - Each bullet point on its own line
 - Keep bullet points concise (5-10 words each)
+- End each bullet point WITHOUT punctuation (no commas or periods)
 
 ## Response Format (JSON only, no markdown):
 {
   "questions": [
     {
-      "question": "Describe [a specific topic].\\n\\nYou should say:\\n- [bullet 1: what/who/when/where]\\n- [bullet 2: details]\\n- [bullet 3: what happened/did]\\n- and explain [bullet 4: why/how you felt].",
+      "question": "Describe [a specific topic].\\n\\nYou should say:\\n- [bullet 1: what/who/when/where]\\n- [bullet 2: details]\\n- [bullet 3: what happened/did]\\n- and explain [bullet 4: why/how you felt]",
       "difficulty": "medium"
     }
   ]
@@ -382,6 +400,19 @@ Part 3 questions should progress from specific to abstract:
 - Society-wide implications, future predictions
 - "To what extent...", "What role should...", "How might... affect society"
 - Example: "To what extent should governments promote domestic tourism?"
+
+## IMPORTANT - TTS-Friendly Format:
+For Part 3 questions, use sentence breaks to create natural pauses:
+
+**Example formats**:
+- Short: "What makes a good teacher?"
+- Medium: "Let's talk about education in your country. How has it changed over the years?"
+- Long: "Now I'd like to discuss the role of technology in schools. In your opinion, how has technology affected the way students learn?"
+
+NOTICE:
+- Split longer questions into 2-3 sentences
+- Use transition phrases like "Let's talk about...", "Now I'd like to discuss..."
+- Each sentence should be clear and complete on its own
 
 ## Response Format (JSON only, no markdown):
 {
