@@ -15,8 +15,11 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "雅思口语练习",
-  description: "雅思口语练习平台",
+  title: "IELTS 口语练习",
+  description: "专业雅思口语练习平台，AI 智能评估，个性化反馈",
+  icons: {
+    icon: "/favicon.png",
+  },
 };
 
 export default function RootLayout({

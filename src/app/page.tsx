@@ -719,7 +719,12 @@ export default function IELTSSpeakingApp() {
       <header className="sticky top-0 z-50 bg-[#E31837] text-white">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => { reset(); setView('home'); }}>
-            <span className="font-semibold text-base tracking-wide">雅思口语</span>
+            <svg width="80" height="32" viewBox="0 0 120 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <text x="10" y="28" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="bold" fill="white" letter-spacing="2">
+                IELTS
+              </text>
+              <rect x="10" y="32" width="70" height="3" rx="1.5" fill="white"/>
+            </svg>
           </div>
           
           <div className="flex items-center gap-2">
@@ -978,8 +983,17 @@ function HomeView({ onStartTest, onViewHistory }: {
   return (
     <div className="space-y-0">
       <div className="bg-[#f8f8f8] -mx-4 px-4 py-16 text-center border-b border-[#eaeaea]">
-        <h1 className="text-3xl font-semibold text-[#222222] mb-3">雅思口语练习</h1>
-        <p className="text-[#666666] text-base">专业评估 · 个性化反馈</p>
+        {/* IELTS Logo */}
+        <div className="flex justify-center mb-4">
+          <svg width="140" height="48" viewBox="0 0 120 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <text x="10" y="28" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="bold" fill="#E31837" letter-spacing="2">
+              IELTS
+            </text>
+            <rect x="10" y="32" width="70" height="3" rx="1.5" fill="#E31837"/>
+          </svg>
+        </div>
+        <h1 className="text-2xl font-medium text-[#666666] mb-2">口语练习</h1>
+        <p className="text-[#999999] text-sm">专业评估 · 个性化反馈</p>
       </div>
 
       <div className="px-1 pt-10 pb-8">
@@ -1027,8 +1041,16 @@ function HomeView({ onStartTest, onViewHistory }: {
         </div>
       </div>
 
-      <footer className="bg-[#333333] -mx-4 px-4 py-8 text-center text-white/60 text-xs mt-8">
-        <p>雅思口语练习平台</p>
+      <footer className="bg-[#333333] -mx-4 px-4 py-8 text-center">
+        <div className="flex justify-center mb-3">
+          <svg width="80" height="28" viewBox="0 0 120 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <text x="10" y="28" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="bold" fill="white" letter-spacing="2" opacity="0.8">
+              IELTS
+            </text>
+            <rect x="10" y="32" width="70" height="3" rx="1.5" fill="white" opacity="0.6"/>
+          </svg>
+        </div>
+        <p className="text-white/40 text-xs">口语练习平台</p>
       </footer>
     </div>
   );
