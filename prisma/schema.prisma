@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String          @id @default(cuid())
+  username     String          @unique
+  password     String
+  email        String?
+  name         String?
+  avatar       String?
+  level        String          @default("intermediate")
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  testSessions TestSession[]
+  settings     UserSettings?
+}
+
+model UserSettings {
+  id                      String   @id @default(cuid())
+  userId                  String   @unique
+  defaultVoice            String   @default("us-female")
+  voiceSpeed              Float    @default(1.0)
+  showQuestionAfterSpeech Boolean  @default(false)
+  autoPlayQuestion        Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TestSession {
+  id              String            @id @default(cuid())
+  userId          String?
+  testType        String            @default("full")
+  status          String            @default("in_progress")
+  totalScore      Float?
+  bandScore       Float?
+  part1Intro      String?
+  part2Intro      String?
+  part3Intro      String?
+  startedAt       DateTime          @default(now())
+  completedAt     DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  responses       SpeakingResponse[]
+  user            User?             @relation(fields: [userId], references: [id])
+}
+
+model SpeakingResponse {
+  id                  String        @id @default(cuid())
+  sessionId           String
+  partNumber          Int
+  questionId          String?
+  questionText        String
+  transcription       String?
+  audioBase64         String?
+  duration            Int?
+  fluencyScore        Float?
+  vocabularyScore     Float?
+  grammarScore        Float?
+  pronunciationScore  Float?
+  overallScore        Float?
+  feedback            String?
+  improvements        String?
+  strengths           String?
+  modelAnswer         String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  session             TestSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model QuestionBank {
+  id           String   @id @default(cuid())
+  partNumber   Int
+  category     String
+  questionText String
+  followUpQuestions String?
+  difficulty   String   @default("medium")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
