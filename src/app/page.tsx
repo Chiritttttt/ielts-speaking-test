@@ -1734,7 +1734,7 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
   sessionId?: string | null;
 }) {
   const [activeTab, setActiveTab] = useState<'scores' | 'responses' | 'improvements'>('scores');
-  const [modelAudioUrls, setModelAudioUrls] = useState<Record<number, string>>({});
+  const [modelAudioUrls, setModelAudioUrls] = useState<Record<string, string>>({});
   const [generatingTTS, setGeneratingTTS] = useState<number | null>(null);
   const [playingModel, setPlayingModel] = useState<number | null>(null);
   const [selectedVoice, setSelectedVoice] = useState<'us-female' | 'uk-female' | 'us-male' | 'uk-male'>('us-female');
