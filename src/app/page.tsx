@@ -433,6 +433,11 @@ export default function IELTSSpeakingApp() {
       const results = [];
       for (let i = 0; i < transcriptionsToEvaluate.length; i++) {
         const t = transcriptionsToEvaluate[i];
+        
+        // 调试日志
+        console.log('[Evaluation] Sending transcription audioBase64 exists:', !!t.audioBase64);
+        console.log('[Evaluation] Sending transcription audioBase64 length:', t.audioBase64?.length || 0);
+        
         setEvaluatingProgress({ 
           current: i + 1, 
           total, 
@@ -453,6 +458,10 @@ export default function IELTSSpeakingApp() {
         
         if (data.success && data.responses?.length > 0) {
           results.push(data.responses[0]);
+          
+          // 调试日志
+          console.log('[Evaluation] Response audioBase64 exists:', !!data.responses[0].audioBase64);
+          console.log('[Evaluation] Response audioBase64 length:', data.responses[0].audioBase64?.length || 0);
           
           const responseData: ResponseData = {
             partNumber: data.responses[0].partNumber || currentPart,
@@ -1360,6 +1369,7 @@ function AudioPlayer({ audioBase64, duration }: { audioBase64?: string; duration
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const formatTimeDisplay = (seconds: number) => {
@@ -1369,8 +1379,13 @@ function AudioPlayer({ audioBase64, duration }: { audioBase64?: string; duration
   };
 
   const playAudio = () => {
-    if (!audioBase64) return;
+    if (!audioBase64) {
+      setError('无录音数据');
+      return;
+    }
     
+    setError(null);
+
     if (audioRef.current && isPlaying) {
       audioRef.current.pause();
       audioRef.current = null;
@@ -1379,7 +1394,12 @@ function AudioPlayer({ audioBase64, duration }: { audioBase64?: string; duration
     }
 
     try {
-      const audio = new Audio(`data:audio/webm;base64,${audioBase64}`);
+      // 检查是否已经包含 data URL 前缀
+      const audioSrc = audioBase64.startsWith('data:') 
+        ? audioBase64 
+        : `data:audio/webm;base64,${audioBase64}`;
+      
+      const audio = new Audio(audioSrc);
       audioRef.current = audio;
       
       audio.onloadedmetadata = () => {
@@ -1396,16 +1416,22 @@ function AudioPlayer({ audioBase64, duration }: { audioBase64?: string; duration
         audioRef.current = null;
       };
       
-      audio.onerror = () => {
+      audio.onerror = (e) => {
+        console.error('Audio error:', e);
         setIsPlaying(false);
+        setError('音频播放失败');
         audioRef.current = null;
-        toast.error('音频播放失败');
       };
       
-      audio.play();
+      audio.play().catch((err) => {
+        console.error('Play error:', err);
+        setError('无法播放音频: ' + err.message);
+        setIsPlaying(false);
+      });
       setIsPlaying(true);
     } catch (error) {
-      toast.error('无法播放音频');
+      console.error('Audio creation error:', error);
+      setError('无法创建音频播放器');
     }
   };
 
@@ -1444,12 +1470,15 @@ function AudioPlayer({ audioBase64, duration }: { audioBase64?: string; duration
           </>
         )}
       </Button>
-      {isPlaying && (
+      {error && (
+        <span className="text-xs text-red-500">{error}</span>
+      )}
+      {!error && isPlaying && (
         <span className="text-xs text-slate-500">
           {formatTimeDisplay(currentTime)} / {formatTimeDisplay(displayDuration)}
         </span>
       )}
-      {!isPlaying && displayDuration > 0 && (
+      {!error && !isPlaying && displayDuration > 0 && (
         <span className="text-xs text-slate-500">
           {formatTimeDisplay(displayDuration)}
         </span>
@@ -1465,6 +1494,17 @@ function ResultView({ evaluation, onNext, onRetry }: {
   onRetry: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<'scores' | 'responses' | 'improvements'>('scores');
+  
+  // 调试日志
+  useEffect(() => {
+    if (evaluation?.responses) {
+      console.log('[ResultView] Responses count:', evaluation.responses.length);
+      evaluation.responses.forEach((r: any, i: number) => {
+        console.log(`[ResultView] Response ${i} audioBase64 exists:`, !!r.audioBase64);
+        console.log(`[ResultView] Response ${i} audioBase64 length:`, r.audioBase64?.length || 0);
+      });
+    }
+  }, [evaluation]);
   
   if (!evaluation) {
     return (
