@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { useIELTSStore, type ResponseData, type ImprovementPlan, type PendingTranscription, loadSettingsFromServer } from '@/store/ielts-store';
 import { LoginDialog, RegisterDialog } from '@/components/auth';
 import { toast } from 'sonner';
+import { indexedDBAudio } from '@/lib/indexeddb-audio';
 
 // Topic lists
 const TOPICS = {
@@ -349,6 +350,17 @@ export default function IELTSSpeakingApp() {
     setIsLoading(true);
     toast.info('正在识别语音...');
     
+    // 先保存录音到 IndexedDB
+    let audioId: string | undefined;
+    try {
+      const currentUserId = sessionId || `temp_${Date.now()}`;
+      const responseId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      audioId = await indexedDBAudio.saveRecording(currentUserId, responseId, base64, recordingDuration);
+      console.log('[Audio] Saved to IndexedDB:', audioId);
+    } catch (error) {
+      console.error('[Audio] Failed to save to IndexedDB:', error);
+    }
+    
     try {
       const response = await fetch('/api/transcribe', {
         method: 'POST',
@@ -358,10 +370,10 @@ export default function IELTSSpeakingApp() {
       const data = await response.json();
       
       if (data.success && data.transcription && data.transcription.trim().length > 0) {
-        processTranscription(data.transcription, base64);
+        processTranscription(data.transcription, base64, audioId);
       } else if (webSpeechBackup && webSpeechBackup.trim().length > 1) {
         toast.info('使用浏览器语音识别结果');
-        processTranscription(webSpeechBackup, base64);
+        processTranscription(webSpeechBackup, base64, audioId);
       } else {
         const errorMsg = data.error || '未检测到语音';
         if (errorMsg.includes('No audio') || errorMsg.includes('empty')) {
@@ -374,7 +386,7 @@ export default function IELTSSpeakingApp() {
     } catch (error) {
       if (webSpeechBackup && webSpeechBackup.trim().length > 1) {
         toast.info('使用浏览器语音识别结果');
-        processTranscription(webSpeechBackup, base64);
+        processTranscription(webSpeechBackup, base64, audioId);
       } else {
         toast.error('语音识别服务出错，请检查 Whisper 服务是否启动');
         setIsLoading(false);
@@ -382,7 +394,7 @@ export default function IELTSSpeakingApp() {
     }
   };
 
-  const processTranscription = (transcription: string, audioBase64?: string) => {
+  const processTranscription = (transcription: string, audioBase64?: string, audioId?: string) => {
     const currentQuestion = questions[currentQuestionIndex];
     if (currentQuestion && transcription.trim().length > 0) {
       const pendingItem: PendingTranscription = {
@@ -391,7 +403,8 @@ export default function IELTSSpeakingApp() {
         transcription: transcription.trim(),
         duration: recordingDuration,
         partNumber: currentPart,
-        audioBase64: audioBase64
+        audioBase64: audioBase64,
+        audioId: audioId
       };
       addPendingTranscription(pendingItem);
       toast.success('语音识别完成');
@@ -712,6 +725,7 @@ export default function IELTSSpeakingApp() {
           evaluation={currentEvaluation}
           onNext={goToNextPart}
           onRetry={() => setView('test')}
+          sessionId={sessionId}
         />;
       case 'history':
         return <HistoryView 
@@ -1374,12 +1388,60 @@ function TestView({
 }
 
 // Audio Player Component
-function AudioPlayer({ audioBase64, duration, showDownload = false }: { audioBase64?: string; duration?: number; showDownload?: boolean }) {
+function AudioPlayer({ audioBase64, audioId, duration, showDownload = false, onGenerateTTS, modelAnswer, modelAnswerAudioId }: { 
+  audioBase64?: string; 
+  audioId?: string;
+  duration?: number; 
+  showDownload?: boolean;
+  onGenerateTTS?: () => void;
+  modelAnswer?: string;
+  modelAnswerAudioId?: string;
+}) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [isPlayingModel, setIsPlayingModel] = useState(false);
+  const [modelAudioBlob, setModelAudioBlob] = useState<Blob | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const modelAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // 从 IndexedDB 加载录音
+  useEffect(() => {
+    const loadAudio = async () => {
+      if (audioId) {
+        try {
+          const blob = await indexedDBAudio.getRecording(audioId.split('-')[0], audioId.split('-')[1] || audioId.split('-').slice(1).join('-'));
+          if (blob) {
+            setAudioBlob(blob);
+            console.log('[AudioPlayer] Loaded from IndexedDB:', audioId);
+          }
+        } catch (err) {
+          console.error('[AudioPlayer] Failed to load from IndexedDB:', err);
+        }
+      }
+    };
+    loadAudio();
+  }, [audioId]);
+
+  // 从 IndexedDB 加载参考回答音频
+  useEffect(() => {
+    const loadModelAudio = async () => {
+      if (modelAnswerAudioId) {
+        try {
+          const blob = await indexedDBAudio.getModelAnswerAudio(modelAnswerAudioId.split('-')[0], modelAnswerAudioId.split('-')[1] || modelAnswerAudioId.split('-').slice(1).join('-'));
+          if (blob) {
+            setModelAudioBlob(blob);
+            console.log('[AudioPlayer] Loaded model answer audio from IndexedDB:', modelAnswerAudioId);
+          }
+        } catch (err) {
+          console.error('[AudioPlayer] Failed to load model audio from IndexedDB:', err);
+        }
+      }
+    };
+    loadModelAudio();
+  }, [modelAnswerAudioId]);
 
   const formatTimeDisplay = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -1388,7 +1450,10 @@ function AudioPlayer({ audioBase64, duration, showDownload = false }: { audioBas
   };
 
   const playAudio = () => {
-    if (!audioBase64) {
+    // 优先使用 IndexedDB 的 Blob，其次使用 base64
+    const audioSource = audioBlob || audioBase64;
+    
+    if (!audioSource) {
       setError('无录音数据');
       return;
     }
@@ -1403,10 +1468,17 @@ function AudioPlayer({ audioBase64, duration, showDownload = false }: { audioBas
     }
 
     try {
-      // 检查是否已经包含 data URL 前缀
-      const audioSrc = audioBase64.startsWith('data:') 
-        ? audioBase64 
-        : `data:audio/webm;base64,${audioBase64}`;
+      let audioSrc: string;
+      if (audioBlob) {
+        audioSrc = URL.createObjectURL(audioBlob);
+      } else if (audioBase64) {
+        audioSrc = audioBase64.startsWith('data:') 
+          ? audioBase64 
+          : `data:audio/webm;base64,${audioBase64}`;
+      } else {
+        setError('无音频源');
+        return;
+      }
       
       const audio = new Audio(audioSrc);
       audioRef.current = audio;
@@ -1423,6 +1495,7 @@ function AudioPlayer({ audioBase64, duration, showDownload = false }: { audioBas
         setIsPlaying(false);
         setCurrentTime(0);
         audioRef.current = null;
+        if (audioBlob) URL.revokeObjectURL(audioSrc);
       };
       
       audio.onerror = (e) => {
@@ -1444,6 +1517,53 @@ function AudioPlayer({ audioBase64, duration, showDownload = false }: { audioBas
     }
   };
 
+  // 播放参考回答音频
+  const playModelAnswerAudio = async () => {
+    // 如果没有预加载的音频，生成新的
+    if (!modelAudioBlob && onGenerateTTS) {
+      onGenerateTTS();
+      return;
+    }
+    
+    if (!modelAudioBlob) {
+      setError('无参考回答音频');
+      return;
+    }
+    
+    setError(null);
+    
+    if (modelAudioRef.current && isPlayingModel) {
+      modelAudioRef.current.pause();
+      modelAudioRef.current = null;
+      setIsPlayingModel(false);
+      return;
+    }
+    
+    try {
+      const audioSrc = URL.createObjectURL(modelAudioBlob);
+      const audio = new Audio(audioSrc);
+      modelAudioRef.current = audio;
+      
+      audio.onended = () => {
+        setIsPlayingModel(false);
+        modelAudioRef.current = null;
+        URL.revokeObjectURL(audioSrc);
+      };
+      
+      audio.onerror = () => {
+        setIsPlayingModel(false);
+        setError('参考回答音频播放失败');
+        modelAudioRef.current = null;
+      };
+      
+      await audio.play();
+      setIsPlayingModel(true);
+    } catch (err) {
+      console.error('Model audio play error:', err);
+      setError('无法播放参考回答音频');
+    }
+  };
+
   // 清理
   useEffect(() => {
     return () => {
@@ -1451,17 +1571,27 @@ function AudioPlayer({ audioBase64, duration, showDownload = false }: { audioBas
         audioRef.current.pause();
         audioRef.current = null;
       }
+      if (modelAudioRef.current) {
+        modelAudioRef.current.pause();
+        modelAudioRef.current = null;
+      }
     };
   }, []);
 
   // 下载录音
   const downloadAudio = () => {
-    if (!audioBase64) return;
+    const audioSource = audioBlob || audioBase64;
+    if (!audioSource) return;
     
     try {
-      const audioSrc = audioBase64.startsWith('data:') 
-        ? audioBase64 
-        : `data:audio/webm;base64,${audioBase64}`;
+      let audioSrc: string;
+      if (audioBlob) {
+        audioSrc = URL.createObjectURL(audioBlob);
+      } else {
+        audioSrc = audioBase64!.startsWith('data:') 
+          ? audioBase64! 
+          : `data:audio/webm;base64,${audioBase64!}`;
+      }
       
       const link = document.createElement('a');
       link.href = audioSrc;
@@ -1469,37 +1599,42 @@ function AudioPlayer({ audioBase64, duration, showDownload = false }: { audioBas
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      if (audioBlob) URL.revokeObjectURL(audioSrc);
     } catch (err) {
       console.error('Download error:', err);
     }
   };
 
-  if (!audioBase64) return null;
+  const hasAudio = audioBlob || audioBase64;
+  if (!hasAudio && !modelAnswer) return null;
 
   // 使用传入的duration或音频实际时长
   const displayDuration = duration || audioDuration;
 
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={playAudio}
-        className="gap-1"
-      >
-        {isPlaying ? (
-          <>
-            <Square className="w-4 h-4" />
-            停止
-          </>
-        ) : (
-          <>
-            <Volume2 className="w-4 h-4" />
-            播放录音
-          </>
-        )}
-      </Button>
-      {showDownload && (
+    <div className="flex flex-wrap items-center gap-2">
+      {hasAudio && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={playAudio}
+          className="gap-1"
+        >
+          {isPlaying ? (
+            <>
+              <Square className="w-4 h-4" />
+              停止
+            </>
+          ) : (
+            <>
+              <Volume2 className="w-4 h-4" />
+              播放录音
+            </>
+          )}
+        </Button>
+      )}
+      
+      {showDownload && hasAudio && (
         <Button
           variant="outline"
           size="sm"
@@ -1510,6 +1645,28 @@ function AudioPlayer({ audioBase64, duration, showDownload = false }: { audioBas
           下载
         </Button>
       )}
+      
+      {modelAnswer && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={playModelAnswerAudio}
+          className="gap-1 text-emerald-600 border-emerald-300 hover:bg-emerald-50"
+        >
+          {isPlayingModel ? (
+            <>
+              <Square className="w-4 h-4" />
+              停止参考
+            </>
+          ) : (
+            <>
+              <Volume2 className="w-4 h-4" />
+              播放参考回答
+            </>
+          )}
+        </Button>
+      )}
+      
       {error && (
         <span className="text-xs text-red-500">{error}</span>
       )}
@@ -1528,12 +1685,15 @@ function AudioPlayer({ audioBase64, duration, showDownload = false }: { audioBas
 }
 
 // Result View
-function ResultView({ evaluation, onNext, onRetry }: {
+function ResultView({ evaluation, onNext, onRetry, sessionId }: {
   evaluation: any;
   onNext: () => void;
   onRetry: () => void;
+  sessionId?: string | null;
 }) {
   const [activeTab, setActiveTab] = useState<'scores' | 'responses' | 'improvements'>('scores');
+  const [modelAudioIds, setModelAudioIds] = useState<Record<number, string>>({});
+  const [generatingTTS, setGeneratingTTS] = useState<number | null>(null);
   
   // 调试日志
   useEffect(() => {
@@ -1541,10 +1701,43 @@ function ResultView({ evaluation, onNext, onRetry }: {
       console.log('[ResultView] Responses count:', evaluation.responses.length);
       evaluation.responses.forEach((r: any, i: number) => {
         console.log(`[ResultView] Response ${i} audioBase64 exists:`, !!r.audioBase64);
-        console.log(`[ResultView] Response ${i} audioBase64 length:`, r.audioBase64?.length || 0);
+        console.log(`[ResultView] Response ${i} audioId:`, r.audioId);
       });
     }
   }, [evaluation]);
+
+  // 生成参考回答 TTS
+  const generateModelAnswerTTS = async (index: number, modelAnswer: string) => {
+    if (!modelAnswer || !sessionId) return;
+    
+    setGeneratingTTS(index);
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: modelAnswer,
+          voice: 'us-female',
+          speed: 1.0
+        })
+      });
+
+      if (!response.ok) throw new Error('TTS 服务不可用');
+
+      const audioBlob = await response.blob();
+      
+      // 保存到 IndexedDB
+      const responseId = `${Date.now()}_model_${index}`;
+      const audioId = await indexedDBAudio.saveModelAnswerAudio(sessionId, responseId, audioBlob);
+      
+      setModelAudioIds(prev => ({ ...prev, [index]: audioId }));
+      toast.success('参考回答音频生成完成');
+    } catch (error) {
+      console.error('TTS generation error:', error);
+      toast.error('参考回答音频生成失败');
+    }
+    setGeneratingTTS(null);
+  };
   
   if (!evaluation) {
     return (
@@ -1642,7 +1835,21 @@ function ResultView({ evaluation, onNext, onRetry }: {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <Label className="text-xs text-slate-500">您的回答</Label>
-                    <AudioPlayer audioBase64={response.audioBase64} duration={response.duration} showDownload={true} />
+                    <AudioPlayer 
+                      audioBase64={response.audioBase64} 
+                      audioId={response.audioId}
+                      duration={response.duration} 
+                      showDownload={true}
+                      modelAnswer={response.modelAnswer}
+                      modelAnswerAudioId={modelAudioIds[index]}
+                      onGenerateTTS={() => generatingTTS !== index && generateModelAnswerTTS(index, response.modelAnswer)}
+                    />
+                    {generatingTTS === index && (
+                      <span className="text-xs text-slate-500 flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        生成音频...
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
                     {response.transcription || '无转录内容'}
@@ -1785,6 +1992,8 @@ function HistoryView({ sessions, onBack, onRefresh }: {
   const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
   const [viewingSession, setViewingSession] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [modelAudioIds, setModelAudioIds] = useState<Record<number, string>>({});
+  const [generatingTTS, setGeneratingTTS] = useState<number | null>(null);
 
   const toggleSelect = (id: string) => {
     const newSelected = new Set(selectedSessions);
@@ -1870,10 +2079,44 @@ function HistoryView({ sessions, onBack, onRefresh }: {
       const data = await response.json();
       if (data.success) {
         setViewingSession(data.session);
+        setModelAudioIds({}); // 重置音频 ID
       }
     } catch (error) {
       toast.error('获取详情失败');
     }
+  };
+
+  // 生成参考回答 TTS
+  const generateModelAnswerTTS = async (index: number, modelAnswer: string, sessionId: string) => {
+    if (!modelAnswer) return;
+    
+    setGeneratingTTS(index);
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: modelAnswer,
+          voice: 'us-female',
+          speed: 1.0
+        })
+      });
+
+      if (!response.ok) throw new Error('TTS 服务不可用');
+
+      const audioBlob = await response.blob();
+      
+      // 保存到 IndexedDB
+      const responseId = `${Date.now()}_model_${index}`;
+      const audioId = await indexedDBAudio.saveModelAnswerAudio(sessionId, responseId, audioBlob);
+      
+      setModelAudioIds(prev => ({ ...prev, [index]: audioId }));
+      toast.success('参考回答音频生成完成');
+    } catch (error) {
+      console.error('TTS generation error:', error);
+      toast.error('参考回答音频生成失败');
+    }
+    setGeneratingTTS(null);
   };
 
   // 查看详情页面
@@ -1922,7 +2165,21 @@ function HistoryView({ sessions, onBack, onRefresh }: {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <Label className="text-xs text-slate-500">您的回答</Label>
-                    <AudioPlayer audioBase64={response.audioBase64} duration={response.duration} showDownload={true} />
+                    <AudioPlayer 
+                      audioBase64={response.audioBase64} 
+                      audioId={response.audioId}
+                      duration={response.duration} 
+                      showDownload={true}
+                      modelAnswer={response.modelAnswer}
+                      modelAnswerAudioId={modelAudioIds[index]}
+                      onGenerateTTS={() => generatingTTS !== index && generateModelAnswerTTS(index, response.modelAnswer, viewingSession.id)}
+                    />
+                    {generatingTTS === index && (
+                      <span className="text-xs text-slate-500 flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        生成音频...
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
                     {response.transcription || '无记录'}

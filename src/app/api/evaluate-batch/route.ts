@@ -128,7 +128,7 @@ Please evaluate this IELTS Speaking response according to Part ${currentPartNumb
                 questionText: transcription.questionText,
                 transcription: transcription.transcription,
                 duration: transcription.duration,
-                audioBase64: transcription.audioBase64,
+                audioPath: transcription.audioId || null, // 存储 audioId 到 audioPath 字段
                 fluencyScore: scores.fluencyCoherence,
                 vocabularyScore: scores.lexicalResource,
                 grammarScore: scores.grammaticalRange,
@@ -147,6 +147,7 @@ Please evaluate this IELTS Speaking response according to Part ${currentPartNumb
               questionText: transcription.questionText,
               transcription: transcription.transcription,
               audioBase64: transcription.audioBase64,
+              audioId: transcription.audioId, // 传递 audioId
               duration: transcription.duration,
               scores,
               feedback,
@@ -162,6 +163,7 @@ Please evaluate this IELTS Speaking response according to Part ${currentPartNumb
               questionText: transcription.questionText,
               transcription: transcription.transcription,
               audioBase64: transcription.audioBase64,
+              audioId: transcription.audioId,
               duration: transcription.duration,
               scores,
               feedback,

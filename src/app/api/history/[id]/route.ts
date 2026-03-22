@@ -38,7 +38,7 @@ export async function GET(
           partNumber: r.partNumber,
           questionText: r.questionText,
           transcription: r.transcription,
-          audioBase64: r.audioBase64,
+          audioId: r.audioPath, // audioId 存储在 audioPath 字段
           duration: r.duration,
           fluencyScore: r.fluencyScore,
           vocabularyScore: r.vocabularyScore,

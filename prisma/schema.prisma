@@ -58,7 +58,7 @@ model SpeakingResponse {
   questionId          String?
   questionText        String
   transcription       String?
-  audioBase64         String?
+  audioPath           String?       // 录音文件路径
   duration            Int?
   fluencyScore        Float?
   vocabularyScore     Float?
@@ -69,6 +69,7 @@ model SpeakingResponse {
   improvements        String?
   strengths           String?
   modelAnswer         String?
+  modelAnswerAudioPath String?     // 参考回答音频文件路径
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
   session             TestSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)

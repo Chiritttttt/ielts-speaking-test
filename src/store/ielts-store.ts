@@ -30,6 +30,7 @@ export interface ResponseData {
   questionText: string;
   transcription: string;
   audioBase64?: string;
+  audioId?: string; // IndexedDB 音频 ID
   duration: number;
   scores: {
     fluencyCoherence: number;
@@ -46,6 +47,7 @@ export interface ResponseData {
     examples?: string[];
   }>;
   modelAnswer?: string;
+  modelAnswerAudioId?: string; // 参考回答音频 ID
 }
 
 export interface PendingTranscription {
@@ -55,6 +57,7 @@ export interface PendingTranscription {
   duration: number;
   partNumber: number;
   audioBase64?: string;
+  audioId?: string; // IndexedDB 音频 ID
 }
 
 export interface SessionData {
