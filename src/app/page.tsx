@@ -1694,6 +1694,10 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
   const [activeTab, setActiveTab] = useState<'scores' | 'responses' | 'improvements'>('scores');
   const [modelAudioIds, setModelAudioIds] = useState<Record<number, string>>({});
   const [generatingTTS, setGeneratingTTS] = useState<number | null>(null);
+  const [selectedVoice, setSelectedVoice] = useState<'us-female' | 'uk-female' | 'us-male' | 'uk-male'>('us-female');
+  const [exampleAudioUrls, setExampleAudioUrls] = useState<Record<string, string>>({});
+  const [playingExample, setPlayingExample] = useState<string | null>(null);
+  const exampleAudioRef = useRef<HTMLAudioElement | null>(null);
   
   // 调试日志
   useEffect(() => {
@@ -1717,7 +1721,7 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: modelAnswer,
-          voice: 'us-female',
+          voice: selectedVoice,
           speed: 1.0
         })
       });
@@ -1727,7 +1731,7 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
       const audioBlob = await response.blob();
       
       // 保存到 IndexedDB
-      const responseId = `${Date.now()}_model_${index}`;
+      const responseId = `${Date.now()}_model_${index}_${selectedVoice}`;
       const audioId = await indexedDBAudio.saveModelAnswerAudio(sessionId, responseId, audioBlob);
       
       setModelAudioIds(prev => ({ ...prev, [index]: audioId }));
@@ -1737,6 +1741,63 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
       toast.error('参考回答音频生成失败');
     }
     setGeneratingTTS(null);
+  };
+
+  // 播放改进建议示例语音
+  const playExampleAudio = async (exampleText: string, key: string) => {
+    // 如果正在播放同一个，停止
+    if (playingExample === key && exampleAudioRef.current) {
+      exampleAudioRef.current.pause();
+      exampleAudioRef.current = null;
+      setPlayingExample(null);
+      return;
+    }
+    
+    // 停止之前的播放
+    if (exampleAudioRef.current) {
+      exampleAudioRef.current.pause();
+      exampleAudioRef.current = null;
+    }
+    
+    // 检查是否已缓存
+    if (exampleAudioUrls[key]) {
+      const audio = new Audio(exampleAudioUrls[key]);
+      exampleAudioRef.current = audio;
+      audio.onended = () => setPlayingExample(null);
+      audio.play();
+      setPlayingExample(key);
+      return;
+    }
+    
+    // 生成新的语音
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: exampleText,
+          voice: selectedVoice,
+          speed: 1.0
+        })
+      });
+
+      if (!response.ok) throw new Error('TTS 服务不可用');
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      // 缓存
+      setExampleAudioUrls(prev => ({ ...prev, [key]: audioUrl }));
+      
+      const audio = new Audio(audioUrl);
+      exampleAudioRef.current = audio;
+      audio.onended = () => setPlayingExample(null);
+      audio.play();
+      setPlayingExample(key);
+    } catch (error) {
+      console.error('Example TTS error:', error);
+      toast.error('示例语音生成失败');
+    }
   };
   
   if (!evaluation) {
@@ -1783,6 +1844,21 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
             {tab.label}
           </button>
         ))}
+      </div>
+
+      {/* 口音选择 */}
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-slate-600">语音口音：</span>
+        <select
+          value={selectedVoice}
+          onChange={(e) => setSelectedVoice(e.target.value as typeof selectedVoice)}
+          className="px-3 py-1.5 border border-slate-200 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#E31837]/20"
+        >
+          <option value="us-female">🇺🇸 美式女声</option>
+          <option value="us-male">🇺🇸 美式男声</option>
+          <option value="uk-female">🇬🇧 英式女声</option>
+          <option value="uk-male">🇬🇧 英式男声</option>
+        </select>
       </div>
 
       {/* 评分详情 */}
@@ -1923,8 +1999,10 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
           </CardHeader>
           <CardContent className="space-y-4">
             {evaluation.responses?.flatMap((response: any, rIndex: number) => 
-              (response.improvements || []).map((improvement: any, iIndex: number) => (
-                <div key={`${rIndex}-${iIndex}`} className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              (response.improvements || []).map((improvement: any, iIndex: number) => {
+                const exampleKey = `${rIndex}-${iIndex}`;
+                return (
+                <div key={exampleKey} className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
                     <Badge variant="outline" className="text-amber-700 border-amber-300">
                       {improvement.area}
@@ -1933,12 +2011,27 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
                   </div>
                   <p className="text-sm text-amber-700 mb-2">{improvement.suggestion}</p>
                   {improvement.example && (
-                    <div className="text-sm bg-white p-2 rounded border border-amber-100">
-                      <strong>示例：</strong>{improvement.example}
+                    <div className="text-sm bg-white p-2 rounded border border-amber-100 flex items-start justify-between gap-2">
+                      <div className="flex-1">
+                        <strong>示例：</strong>{improvement.example}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => playExampleAudio(improvement.example, exampleKey)}
+                        className={`shrink-0 ${playingExample === exampleKey ? 'text-amber-600 bg-amber-100' : 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'}`}
+                        title={playingExample === exampleKey ? '停止播放' : '播放示例语音'}
+                      >
+                        {playingExample === exampleKey ? (
+                          <Square className="w-4 h-4" />
+                        ) : (
+                          <Volume2 className="w-4 h-4" />
+                        )}
+                      </Button>
                     </div>
                   )}
                 </div>
-              ))
+              )})
             )}
             
             {/* 优势总结 */}
@@ -1994,6 +2087,10 @@ function HistoryView({ sessions, onBack, onRefresh }: {
   const [deleting, setDeleting] = useState(false);
   const [modelAudioIds, setModelAudioIds] = useState<Record<number, string>>({});
   const [generatingTTS, setGeneratingTTS] = useState<number | null>(null);
+  const [selectedVoice, setSelectedVoice] = useState<'us-female' | 'uk-female' | 'us-male' | 'uk-male'>('us-female');
+  const [exampleAudioUrls, setExampleAudioUrls] = useState<Record<string, string>>({});
+  const [playingExample, setPlayingExample] = useState<string | null>(null);
+  const exampleAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const toggleSelect = (id: string) => {
     const newSelected = new Set(selectedSessions);
@@ -2075,13 +2172,18 @@ function HistoryView({ sessions, onBack, onRefresh }: {
 
   const viewSessionDetails = async (sessionId: string) => {
     try {
+      console.log('[History] Fetching session details:', sessionId);
       const response = await fetch(`/api/history/${sessionId}`);
       const data = await response.json();
-      if (data.success) {
+      console.log('[History] Response:', data);
+      if (data.success && data.session) {
         setViewingSession(data.session);
         setModelAudioIds({}); // 重置音频 ID
+      } else {
+        toast.error(data.error || '获取详情失败');
       }
     } catch (error) {
+      console.error('[History] Error:', error);
       toast.error('获取详情失败');
     }
   };
@@ -2097,7 +2199,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text: modelAnswer,
-          voice: 'us-female',
+          voice: selectedVoice,
           speed: 1.0
         })
       });
@@ -2107,7 +2209,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
       const audioBlob = await response.blob();
       
       // 保存到 IndexedDB
-      const responseId = `${Date.now()}_model_${index}`;
+      const responseId = `${Date.now()}_model_${index}_${selectedVoice}`;
       const audioId = await indexedDBAudio.saveModelAnswerAudio(sessionId, responseId, audioBlob);
       
       setModelAudioIds(prev => ({ ...prev, [index]: audioId }));
@@ -2119,6 +2221,63 @@ function HistoryView({ sessions, onBack, onRefresh }: {
     setGeneratingTTS(null);
   };
 
+  // 播放改进建议示例语音（历史记录中）
+  const playExampleAudioInHistory = async (exampleText: string, key: string) => {
+    // 如果正在播放同一个，停止
+    if (playingExample === key && exampleAudioRef.current) {
+      exampleAudioRef.current.pause();
+      exampleAudioRef.current = null;
+      setPlayingExample(null);
+      return;
+    }
+    
+    // 停止之前的播放
+    if (exampleAudioRef.current) {
+      exampleAudioRef.current.pause();
+      exampleAudioRef.current = null;
+    }
+    
+    // 检查是否已缓存
+    if (exampleAudioUrls[key]) {
+      const audio = new Audio(exampleAudioUrls[key]);
+      exampleAudioRef.current = audio;
+      audio.onended = () => setPlayingExample(null);
+      audio.play();
+      setPlayingExample(key);
+      return;
+    }
+    
+    // 生成新的语音
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: exampleText,
+          voice: selectedVoice,
+          speed: 1.0
+        })
+      });
+
+      if (!response.ok) throw new Error('TTS 服务不可用');
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      // 缓存
+      setExampleAudioUrls(prev => ({ ...prev, [key]: audioUrl }));
+      
+      const audio = new Audio(audioUrl);
+      exampleAudioRef.current = audio;
+      audio.onended = () => setPlayingExample(null);
+      audio.play();
+      setPlayingExample(key);
+    } catch (error) {
+      console.error('Example TTS error:', error);
+      toast.error('示例语音生成失败');
+    }
+  };
+
   // 查看详情页面
   if (viewingSession) {
     return (
@@ -2128,6 +2287,21 @@ function HistoryView({ sessions, onBack, onRefresh }: {
           <Button variant="ghost" onClick={() => setViewingSession(null)}>
             <ChevronLeft className="w-4 h-4 mr-2" /> 返回
           </Button>
+        </div>
+
+        {/* 口音选择 */}
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-slate-600">语音口音：</span>
+          <select
+            value={selectedVoice}
+            onChange={(e) => setSelectedVoice(e.target.value as typeof selectedVoice)}
+            className="px-3 py-1.5 border border-slate-200 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#E31837]/20"
+          >
+            <option value="us-female">🇺🇸 美式女声</option>
+            <option value="us-male">🇺🇸 美式男声</option>
+            <option value="uk-female">🇬🇧 英式女声</option>
+            <option value="uk-male">🇬🇧 英式男声</option>
+          </select>
         </div>
 
         <Card>
@@ -2150,7 +2324,11 @@ function HistoryView({ sessions, onBack, onRefresh }: {
 
         {/* 回答列表 */}
         <div className="space-y-4">
-          {viewingSession.responses?.map((response: any, index: number) => (
+          {viewingSession.responses?.map((response: any, index: number) => {
+            // 解析 improvements
+            const improvements = response.improvements || [];
+            
+            return (
             <Card key={index}>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
@@ -2205,6 +2383,48 @@ function HistoryView({ sessions, onBack, onRefresh }: {
                   </div>
                 </div>
 
+                {/* 改进建议 */}
+                {improvements.length > 0 && (
+                  <div className="mt-3">
+                    <Label className="text-xs text-slate-500">改进建议</Label>
+                    <div className="mt-1 space-y-2">
+                      {improvements.map((imp: any, impIndex: number) => {
+                        const exampleKey = `history-${index}-${impIndex}`;
+                        return (
+                        <div key={impIndex} className="p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge variant="outline" className="text-xs text-amber-700 border-amber-300">
+                              {imp.area}
+                            </Badge>
+                            <span className="text-xs font-medium text-amber-800">{imp.issue}</span>
+                          </div>
+                          <p className="text-xs text-amber-700">{imp.suggestion}</p>
+                          {imp.example && (
+                            <div className="mt-1 text-xs bg-white p-2 rounded border border-amber-100 flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <strong>示例：</strong>{imp.example}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => playExampleAudioInHistory(imp.example, exampleKey)}
+                                className={`shrink-0 h-6 w-6 p-0 ${playingExample === exampleKey ? 'text-amber-600 bg-amber-100' : 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'}`}
+                                title={playingExample === exampleKey ? '停止播放' : '播放示例语音'}
+                              >
+                                {playingExample === exampleKey ? (
+                                  <Square className="w-3 h-3" />
+                                ) : (
+                                  <Volume2 className="w-3 h-3" />
+                                )}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )})}
+                    </div>
+                  </div>
+                )}
+
                 {response.modelAnswer && (
                   <div>
                     <Label className="text-xs text-slate-500">参考回答</Label>
@@ -2215,7 +2435,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
                 )}
               </CardContent>
             </Card>
-          ))}
+          )})}
         </div>
       </div>
     );
