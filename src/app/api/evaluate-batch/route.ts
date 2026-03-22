@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { callDeepSeek, IELTS_EVALUATION_PROMPT } from '@/lib/deepseek';
+import { callDeepSeek, getEvaluationPrompt } from '@/lib/deepseek';
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,23 +38,28 @@ export async function POST(request: NextRequest) {
 
     for (let i = 0; i < transcriptions.length; i++) {
       const transcription = transcriptions[i];
-      console.log(`[Evaluate] Processing transcription ${i + 1}/${transcriptions.length}`);
+      const currentPartNumber = transcription.partNumber || partNumber || 1;
       
-      const prompt = `${IELTS_EVALUATION_PROMPT}
+      console.log(`[Evaluate] Processing transcription ${i + 1}/${transcriptions.length}, Part ${currentPartNumber}`);
+      
+      // 根据 Part 选择对应的评估 Prompt
+      const evaluationPrompt = getEvaluationPrompt(currentPartNumber);
+      
+      const prompt = `${evaluationPrompt}
 
-## Question (Part ${transcription.partNumber}):
+## Question (Part ${currentPartNumber}):
 ${transcription.questionText}
 
 ## Candidate's Response:
 "${transcription.transcription}"
 
-## Response Duration: ${transcription.duration} seconds
+## Response Duration: ${transcription.duration || 30} seconds
 
-Please evaluate this IELTS Speaking response. Output only valid JSON without markdown code blocks.`;
+Please evaluate this IELTS Speaking response according to Part ${currentPartNumber} requirements. Output only valid JSON without markdown code blocks.`;
 
       const result = await callDeepSeek([
         { role: 'user', content: prompt }
-      ], { temperature: 0.3, max_tokens: 2000 });
+      ], { temperature: 0.3, max_tokens: 2500 });
 
       if (!result.success) {
         console.error('[Evaluate] API call failed:', result.error);
@@ -75,22 +80,27 @@ Please evaluate this IELTS Speaking response. Output only valid JSON without mar
           }
           
           const evaluation = JSON.parse(jsonStr);
-          console.log('[Evaluate] Parsed evaluation scores:', evaluation.scores);
+          console.log('[Evaluate] Parsed evaluation:', {
+            scores: evaluation.scores,
+            hasModelAnswer: !!evaluation.modelAnswer
+          });
 
+          // 解析分数 - 兼容不同的字段名
           const scores = {
-            fluencyCoherence: Number(evaluation.scores?.fluencyCoherence) || 6.0,
-            lexicalResource: Number(evaluation.scores?.lexicalResource) || 6.0,
-            grammaticalRange: Number(evaluation.scores?.grammaticalRange) || 6.0,
+            fluencyCoherence: Number(evaluation.scores?.fluencyCoherence || evaluation.scores?.fluency_coherence) || 6.0,
+            lexicalResource: Number(evaluation.scores?.lexicalResource || evaluation.scores?.lexical_resource) || 6.0,
+            grammaticalRange: Number(evaluation.scores?.grammaticalRange || evaluation.scores?.grammatical_range) || 6.0,
             pronunciation: Number(evaluation.scores?.pronunciation) || 6.0,
             overall: 0
           };
           
-          // 确保分数在有效范围内
-          scores.fluencyCoherence = Math.min(9, Math.max(0, scores.fluencyCoherence));
-          scores.lexicalResource = Math.min(9, Math.max(0, scores.lexicalResource));
-          scores.grammaticalRange = Math.min(9, Math.max(0, scores.grammaticalRange));
-          scores.pronunciation = Math.min(9, Math.max(0, scores.pronunciation));
-          scores.overall = (scores.fluencyCoherence + scores.lexicalResource + scores.grammaticalRange + scores.pronunciation) / 4;
+          // 确保分数在有效范围内 (0-9)，支持 0.5 分增量
+          const roundToHalf = (n: number) => Math.round(n * 2) / 2;
+          scores.fluencyCoherence = roundToHalf(Math.min(9, Math.max(0, scores.fluencyCoherence)));
+          scores.lexicalResource = roundToHalf(Math.min(9, Math.max(0, scores.lexicalResource)));
+          scores.grammaticalRange = roundToHalf(Math.min(9, Math.max(0, scores.grammaticalRange)));
+          scores.pronunciation = roundToHalf(Math.min(9, Math.max(0, scores.pronunciation)));
+          scores.overall = roundToHalf((scores.fluencyCoherence + scores.lexicalResource + scores.grammaticalRange + scores.pronunciation) / 4);
 
           totalFluency += scores.fluencyCoherence;
           totalVocabulary += scores.lexicalResource;
@@ -98,12 +108,23 @@ Please evaluate this IELTS Speaking response. Output only valid JSON without mar
           totalPronunciation += scores.pronunciation;
           totalOverall += scores.overall;
 
+          // 构建反馈对象
+          const feedback = evaluation.feedback || {
+            fluencyCoherence: `Fluency & Coherence: ${scores.fluencyCoherence}`,
+            lexicalResource: `Lexical Resource: ${scores.lexicalResource}`,
+            grammaticalRange: `Grammar: ${scores.grammaticalRange}`,
+            pronunciation: `Pronunciation: ${scores.pronunciation}`
+          };
+
+          // 获取模型答案（参考回答）
+          const modelAnswer = evaluation.modelAnswer || '';
+
           // 保存到数据库
           try {
             const responseRecord = await db.speakingResponse.create({
               data: {
                 sessionId: sessionId || 'unknown',
-                partNumber: transcription.partNumber,
+                partNumber: currentPartNumber,
                 questionText: transcription.questionText,
                 transcription: transcription.transcription,
                 duration: transcription.duration,
@@ -113,38 +134,38 @@ Please evaluate this IELTS Speaking response. Output only valid JSON without mar
                 grammarScore: scores.grammaticalRange,
                 pronunciationScore: scores.pronunciation,
                 overallScore: scores.overall,
-                feedback: JSON.stringify(evaluation.feedback || {}),
+                feedback: JSON.stringify(feedback),
                 improvements: JSON.stringify(evaluation.improvements || []),
                 strengths: JSON.stringify(evaluation.strengths || []),
-                modelAnswer: evaluation.modelAnswer || ''
+                modelAnswer: modelAnswer
               }
             });
 
             results.push({
               id: responseRecord.id,
-              partNumber: transcription.partNumber,
+              partNumber: currentPartNumber,
               questionText: transcription.questionText,
               transcription: transcription.transcription,
               duration: transcription.duration,
               scores,
-              feedback: evaluation.feedback || {},
+              feedback,
               improvements: evaluation.improvements || [],
               strengths: evaluation.strengths || [],
-              modelAnswer: evaluation.modelAnswer || ''
+              modelAnswer
             });
           } catch (dbError) {
             console.error('[Evaluate] Database error:', dbError);
             // 即使数据库保存失败，也返回结果
             results.push({
-              partNumber: transcription.partNumber,
+              partNumber: currentPartNumber,
               questionText: transcription.questionText,
               transcription: transcription.transcription,
               duration: transcription.duration,
               scores,
-              feedback: evaluation.feedback || {},
+              feedback,
               improvements: evaluation.improvements || [],
               strengths: evaluation.strengths || [],
-              modelAnswer: evaluation.modelAnswer || ''
+              modelAnswer
             });
           }
         } catch (parseError) {
