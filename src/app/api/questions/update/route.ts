@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { callDeepSeek } from '@/lib/deepseek';
+import { callDeepSeek, PART1_GENERATION_PROMPT, PART2_GENERATION_PROMPT, PART3_GENERATION_PROMPT } from '@/lib/deepseek';
 
 // Check server API key status
 export async function POST(request: NextRequest) {
@@ -50,98 +50,23 @@ export async function PUT(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // 根据不同 Part 选择对应的 Prompt
     let prompt: string;
-    
     if (partNumber === 1) {
-      prompt = `You are an IELTS Speaking examiner. Generate ${count} authentic IELTS Speaking Part 1 questions on the topic: "${topic}"
-
-## Part 1 Format (Introduction and Interview, 4-5 minutes):
-- Simple, everyday topics familiar to test takers
-- Questions about personal experiences, preferences, and opinions
-- Each question expects a 20-30 second response
-
-## CRITICAL: Questions MUST be ordered from EASY to DIFFICULT:
-1. **First 1-2 questions (Easy)**: Simple factual questions
-   - "Where is your hometown?" / "What do you do?" / "Do you have any hobbies?"
-   
-2. **Middle questions (Medium)**: Opinion/preference questions
-   - "What do you like most about...?" / "Why did you choose...?"
-   
-3. **Last questions (Harder)**: Evaluation/hypothetical questions
-   - "Do you think...?" / "Would you prefer to...?" / "How has... changed?"
-
-Output JSON format only (no markdown):
-{
-  "questions": [
-    {
-      "question": "<question text>",
-      "category": "${topic}",
-      "difficulty": "easy|medium|hard"
-    }
-  ]
-}`;
+      prompt = PART1_GENERATION_PROMPT(topic, count);
     } else if (partNumber === 2) {
-      prompt = `You are an IELTS Speaking examiner. Generate ${count} authentic IELTS Speaking Part 2 cue cards on the topic: "${topic}"
-
-## Part 2 Format (Individual Long Turn, 3-4 minutes):
-- A cue card with a main topic and bullet point prompts
-- Test taker has 1 minute to prepare, 1-2 minutes to speak
-
-## Cue Card Structure:
-1. Main instruction: "Describe a [person/place/object/event/situation]..."
-2. Bullet points should guide from FACTUAL to ABSTRACT:
-   - First 1-2 points: WHO/WHAT/WHEN/WHERE (easy - factual)
-   - Middle point: WHY/HOW (medium - explanatory)
-   - Final point: "and explain..." (harder - evaluation/reflection)
-
-Output JSON format only (no markdown):
-{
-  "questions": [
-    {
-      "question": "Describe a ${topic.toLowerCase()}...\\n\\nYou should say:\\n- <point 1>\\n- <point 2>\\n- <point 3>\\nand explain <point 4>.",
-      "category": "${topic}",
-      "difficulty": "medium"
-    }
-  ]
-}`;
+      prompt = PART2_GENERATION_PROMPT(topic, count);
     } else {
-      prompt = `You are an IELTS Speaking examiner. Generate ${count} authentic IELTS Speaking Part 3 discussion questions on the topic: "${topic}"
-
-## Part 3 Format (Two-Way Discussion, 4-5 minutes):
-- Abstract, analytical questions related to broader themes
-- Requires critical thinking and extended responses (30-60 seconds each)
-
-## Questions MUST be ordered from EASY to DIFFICULT:
-1. **First question (Easy - Descriptive)**: 
-   - "What are the main types of...?" / "How do people typically...?"
-2. **Second question (Medium - Comparative)**:
-   - "How has... changed over the years?" / "What are the differences between...?"
-3. **Third question (Medium-Hard - Evaluative)**:
-   - "What are the advantages and disadvantages of...?" / "Why do you think...?"
-4. **Fourth question (Hard - Speculative)**:
-   - "Do you think... will... in the future?" / "What would happen if...?"
-5. **Fifth question (Hardest - Abstract)**:
-   - "What role does... play in society?" / "To what extent should...?"
-
-Output JSON format only (no markdown):
-{
-  "questions": [
-    {
-      "question": "<question text>",
-      "category": "${topic}",
-      "difficulty": "easy|medium|hard"
-    }
-  ]
-}`;
+      prompt = PART3_GENERATION_PROMPT(topic, count);
     }
 
     const result = await callDeepSeek([
       { 
         role: 'system', 
-        content: 'You are an expert IELTS examiner. Generate high-quality IELTS Speaking questions. Always respond with valid JSON only, no markdown code blocks.' 
+        content: 'You are an expert IELTS examiner. Generate authentic IELTS Speaking questions that follow the official difficulty progression. Always respond with valid JSON only, no markdown code blocks.' 
       },
       { role: 'user', content: prompt }
-    ], { temperature: 0.8 });
+    ], { temperature: 0.7 });
 
     if (!result.success) {
       return NextResponse.json({
@@ -167,10 +92,19 @@ Output JSON format only (no markdown):
       }, { status: 500 });
     }
 
+    // 难度排序映射（确保正确排序：easy -> medium -> hard）
+    const difficultyOrder: Record<string, number> = { 'easy': 1, 'medium': 2, 'hard': 3 };
+    
+    // 按难度排序题目
+    const sortedQuestions = (questions.questions || []).sort((a: any, b: any) => {
+      return (difficultyOrder[a.difficulty] || 2) - (difficultyOrder[b.difficulty] || 2);
+    });
+
     const savedQuestions = [];
-    for (const q of questions.questions || []) {
+    for (let i = 0; i < sortedQuestions.length; i++) {
+      const q = sortedQuestions[i];
       try {
-        const difficulty = q.difficulty || (partNumber === 1 ? 'easy' : partNumber === 2 ? 'medium' : 'hard');
+        const difficulty = q.difficulty || 'medium';
         
         const saved = await db.questionBank.create({
           data: {

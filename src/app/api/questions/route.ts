@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+// 难度排序映射
+const DIFFICULTY_ORDER: Record<string, number> = {
+  'easy': 1,
+  'medium': 2,
+  'hard': 3
+};
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -12,12 +19,10 @@ export async function GET(request: NextRequest) {
     if (part) whereClause.partNumber = parseInt(part);
     if (category) whereClause.category = category;
 
+    // 获取题目
     const questions = await db.questionBank.findMany({
       where: whereClause,
-      orderBy: [
-        { createdAt: 'desc' }
-      ],
-      take: count
+      take: count * 3 // 获取更多以便排序
     });
 
     if (questions.length === 0) {
@@ -27,9 +32,16 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // 按难度排序：easy -> medium -> hard
+    const sortedQuestions = questions.sort((a, b) => {
+      const orderA = DIFFICULTY_ORDER[a.difficulty] || 2;
+      const orderB = DIFFICULTY_ORDER[b.difficulty] || 2;
+      return orderA - orderB;
+    }).slice(0, count);
+
     return NextResponse.json({
       success: true,
-      questions: questions.map(q => ({
+      questions: sortedQuestions.map(q => ({
         id: q.id,
         questionText: q.questionText,
         category: q.category,
