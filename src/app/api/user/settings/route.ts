@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
           userId,
           defaultVoice: 'us-female',
           voiceSpeed: 1.0,
-          showQuestionAfterSpeech: false,
+          showQuestionAfterSpeech: true,
           autoPlayQuestion: true
         }
       });
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       settings: {
         defaultVoice: settings.defaultVoice || 'us-female',
         voiceSpeed: settings.voiceSpeed ?? 1.0,
-        showQuestionAfterSpeech: settings.showQuestionAfterSpeech ?? false,
+        showQuestionAfterSpeech: settings.showQuestionAfterSpeech ?? true,
         autoPlayQuestion: settings.autoPlayQuestion ?? true
       }
     });
@@ -75,7 +75,7 @@ export async function PUT(request: NextRequest) {
         userId,
         defaultVoice: defaultVoice || 'us-female',
         voiceSpeed: voiceSpeed ?? 1.0,
-        showQuestionAfterSpeech: showQuestionAfterSpeech ?? false,
+        showQuestionAfterSpeech: showQuestionAfterSpeech ?? true,
         autoPlayQuestion: autoPlayQuestion ?? true
       }
     });
