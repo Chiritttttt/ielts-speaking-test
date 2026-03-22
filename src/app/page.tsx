@@ -975,7 +975,112 @@ function TestView({
   updateSetting: <K extends keyof { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean }>(key: K, value: { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean }[K]) => void;
 }) {
   const currentQuestion = questions[currentQuestionIndex];
+  // showQuestionAfterSpeech=false 表示语音播放后显示，所以默认隐藏题目
   const [showQuestion, setShowQuestion] = useState(settings.showQuestionAfterSpeech);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const prevQuestionIdRef = useRef<string | null>(null);
+
+  // 播放题目音频
+  const playQuestionAudio = useCallback(async () => {
+    if (!currentQuestion?.questionText) return;
+    
+    setAudioError(null);
+    setIsPlayingAudio(true);
+    
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: currentQuestion.questionText,
+          voice: settings.defaultVoice,
+          speed: settings.voiceSpeed
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('TTS service unavailable');
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      if (audioRef.current) {
+        audioRef.current.pause();
+        URL.revokeObjectURL(audioRef.current.src);
+      }
+      
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+      
+      audio.onended = () => {
+        setIsPlayingAudio(false);
+        // 语音播放后显示题目文本
+        if (!settings.showQuestionAfterSpeech) {
+          setShowQuestion(true);
+        }
+      };
+      
+      audio.onerror = () => {
+        setIsPlayingAudio(false);
+        setAudioError('音频播放失败');
+      };
+      
+      await audio.play();
+    } catch (error) {
+      console.error('Audio play error:', error);
+      setIsPlayingAudio(false);
+      setAudioError('语音服务暂时不可用');
+      // 如果音频播放失败，显示题目文本
+      if (!settings.showQuestionAfterSpeech) {
+        setShowQuestion(true);
+      }
+    }
+  }, [currentQuestion?.questionText, settings.defaultVoice, settings.voiceSpeed, settings.showQuestionAfterSpeech]);
+
+  // 停止音频播放
+  const stopAudio = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      setIsPlayingAudio(false);
+    }
+  }, []);
+
+  // 题目变化时自动播放音频
+  useEffect(() => {
+    if (currentQuestion && currentQuestion.id !== prevQuestionIdRef.current) {
+      prevQuestionIdRef.current = currentQuestion.id;
+      
+      // 重置题目显示状态
+      setShowQuestion(settings.showQuestionAfterSpeech);
+      
+      // 自动播放音频
+      if (settings.autoPlayQuestion) {
+        // 延迟一点播放，确保页面已加载
+        const timer = setTimeout(() => {
+          playQuestionAudio();
+        }, 300);
+        return () => clearTimeout(timer);
+      }
+    }
+    
+    return () => {
+      stopAudio();
+    };
+  }, [currentQuestion?.id, settings.autoPlayQuestion, settings.showQuestionAfterSpeech, playQuestionAudio, stopAudio]);
+
+  // 组件卸载时清理音频
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        URL.revokeObjectURL(audioRef.current.src);
+      }
+    };
+  }, []);
 
   if (!currentQuestion) {
     return (
@@ -998,14 +1103,64 @@ function TestView({
 
       <Card>
         <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b">
-          <CardTitle className="text-xl">问题 {currentQuestionIndex + 1}</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-xl">问题 {currentQuestionIndex + 1}</CardTitle>
+            <div className="flex items-center gap-2">
+              {/* 播放/停止音频按钮 */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={isPlayingAudio ? stopAudio : playQuestionAudio}
+                className="gap-1"
+              >
+                {isPlayingAudio ? (
+                  <>
+                    <Square className="w-4 h-4" />
+                    停止
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="w-4 h-4" />
+                    播放
+                  </>
+                )}
+              </Button>
+              {/* 显示/隐藏题目按钮 */}
+              {!settings.showQuestionAfterSpeech && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowQuestion(!showQuestion)}
+                  className="gap-1"
+                >
+                  <Eye className="w-4 h-4" />
+                  {showQuestion ? '隐藏' : '显示'}
+                </Button>
+              )}
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="pt-6">
           <div className="bg-slate-50 rounded-xl p-6 mb-6 min-h-[140px] flex items-center justify-center">
-            <p className="text-lg text-slate-800 whitespace-pre-line leading-relaxed">
-              {currentQuestion.questionText}
-            </p>
+            {showQuestion ? (
+              <p className="text-lg text-slate-800 whitespace-pre-line leading-relaxed">
+                {currentQuestion.questionText}
+              </p>
+            ) : (
+              <div className="text-center text-slate-400">
+                <Volume2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">请先听题，然后作答</p>
+                <p className="text-xs mt-1">点击"显示"可查看题目文本</p>
+              </div>
+            )}
           </div>
+
+          {audioError && (
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              {audioError}
+            </div>
+          )}
 
           {/* Recording controls */}
           <div className="flex flex-col items-center gap-6">

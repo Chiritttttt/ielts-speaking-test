@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import ZAI from 'z-ai-web-dev-sdk';
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,50 +13,32 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Map voice ID to language code for TTS
-    const voiceMap: Record<string, string> = {
-      'us-female': 'en-US',
-      'us-male': 'en-US',
-      'uk-female': 'en-GB',
-      'uk-male': 'en-GB',
-      'shimmer': 'en-US',
-      'fable': 'en-GB'
-    };
+    // Initialize ZAI
+    const zai = await ZAI.create();
 
-    const lang = voiceMap[voice] || 'en-US';
-    
-    // Use external TTS service or OpenAI TTS if available
-    if (process.env.OPENAI_API_KEY) {
-      const response = await fetch('https://api.openai.com/v1/audio/speech', {
-        method: 'POST',
+    // Generate speech using z-ai-web-dev-sdk
+    const response = await zai.audio.speech.create({
+      input: text.substring(0, 4000), // Limit text length
+      voice: voice.includes('female') ? 'alloy' : 'echo',
+      speed: speed
+    });
+
+    // The response contains base64 encoded audio
+    if (response && response.data && response.data[0]?.base64) {
+      const audioBuffer = Buffer.from(response.data[0].base64, 'base64');
+      
+      return new NextResponse(audioBuffer, {
         headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: 'tts-1',
-          input: text.substring(0, 4000), // Limit text length
-          voice: voice.includes('female') ? 'alloy' : 'echo',
-          speed: speed
-        })
+          'Content-Type': 'audio/mpeg',
+          'Content-Length': audioBuffer.byteLength.toString()
+        }
       });
-
-      if (response.ok) {
-        const audioBuffer = await response.arrayBuffer();
-        return new NextResponse(audioBuffer, {
-          headers: {
-            'Content-Type': 'audio/mpeg',
-            'Content-Length': audioBuffer.byteLength.toString()
-          }
-        });
-      }
     }
 
-    // Fallback: Return error indicating TTS not configured
     return NextResponse.json({
       success: false,
-      error: 'TTS service not configured'
-    }, { status: 503 });
+      error: 'TTS generation failed'
+    }, { status: 500 });
 
   } catch (error) {
     console.error('TTS error:', error);
