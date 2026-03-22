@@ -2070,16 +2070,20 @@ function SettingsView({ settings, updateSetting, user }: {
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium">语音播放后显示题目文本</p>
-              <p className="text-sm text-slate-500">播放完成后自动显示题目文本</p>
+              <p className="font-medium">先听后看模式</p>
+              <p className="text-sm text-slate-500">
+                {settings.showQuestionAfterSpeech 
+                  ? '开启：题目先隐藏，播放完成后自动显示' 
+                  : '关闭：题目始终可见'}
+              </p>
             </div>
             <Switch checked={settings.showQuestionAfterSpeech} onCheckedChange={(checked) => updateSetting('showQuestionAfterSpeech', checked)} />
           </div>
           <Separator />
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium">自动播放题目</p>
-              <p className="text-sm text-slate-500">进入新题目时自动朗读</p>
+              <p className="font-medium">自动播放题目语音</p>
+              <p className="text-sm text-slate-500">进入新题目时自动朗读题目内容</p>
             </div>
             <Switch checked={settings.autoPlayQuestion} onCheckedChange={(checked) => updateSetting('autoPlayQuestion', checked)} />
           </div>
