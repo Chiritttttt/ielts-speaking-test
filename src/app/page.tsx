@@ -1079,9 +1079,10 @@ function TestView({
   updateSetting: <K extends keyof { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean }>(key: K, value: { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean }[K]) => void;
 }) {
   const currentQuestion = questions[currentQuestionIndex];
-  // showQuestionAfterSpeech=true 表示"语音播放后显示"，即默认隐藏，播放后显示
-  // showQuestionAfterSpeech=false 表示"始终显示"，即默认就显示
-  const [showQuestion, setShowQuestion] = useState(!settings.showQuestionAfterSpeech);
+  // showQuestionAfterSpeech=true: 播放完毕后自动显示文本
+  // showQuestionAfterSpeech=false: 始终需要手动点击显示
+  // 无论设置如何，初始状态都是隐藏
+  const [showQuestion, setShowQuestion] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -1159,8 +1160,8 @@ function TestView({
     if (currentQuestion && currentQuestion.id !== prevQuestionIdRef.current) {
       prevQuestionIdRef.current = currentQuestion.id;
       
-      // 重置题目显示状态：如果设置"播放后显示"则默认隐藏，否则默认显示
-      setShowQuestion(!settings.showQuestionAfterSpeech);
+      // 每次新题目都重置为隐藏状态
+      setShowQuestion(false);
       
       // 自动播放音频
       if (settings.autoPlayQuestion) {
@@ -1174,7 +1175,7 @@ function TestView({
     return () => {
       stopAudio();
     };
-  }, [currentQuestion?.id, settings.autoPlayQuestion, settings.showQuestionAfterSpeech, playQuestionAudio, stopAudio]);
+  }, [currentQuestion?.id, settings.autoPlayQuestion, playQuestionAudio, stopAudio]);
 
   // 组件卸载时清理音频
   useEffect(() => {
@@ -1229,18 +1230,16 @@ function TestView({
                   </>
                 )}
               </Button>
-              {/* 显示/隐藏题目按钮 - 只有设置"播放后显示"时才显示此按钮 */}
-              {settings.showQuestionAfterSpeech && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowQuestion(!showQuestion)}
-                  className="gap-1"
-                >
-                  <Eye className="w-4 h-4" />
-                  {showQuestion ? '隐藏' : '显示'}
-                </Button>
-              )}
+              {/* 显示/隐藏题目按钮 */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowQuestion(!showQuestion)}
+                className="gap-1"
+              >
+                <Eye className="w-4 h-4" />
+                {showQuestion ? '隐藏' : '显示'}
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -2092,11 +2091,11 @@ function SettingsView({ settings, updateSetting, user }: {
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium">先听后看模式</p>
+              <p className="font-medium">播放后自动显示题目</p>
               <p className="text-sm text-slate-500">
                 {settings.showQuestionAfterSpeech 
-                  ? '开启：题目先隐藏，播放完成后自动显示' 
-                  : '关闭：题目始终可见'}
+                  ? '开启：音频播放完毕后自动显示题目文本' 
+                  : '关闭：题目始终隐藏，需手动点击查看'}
               </p>
             </div>
             <Switch checked={settings.showQuestionAfterSpeech} onCheckedChange={(checked) => updateSetting('showQuestionAfterSpeech', checked)} />

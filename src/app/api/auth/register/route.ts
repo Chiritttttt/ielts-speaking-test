@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
         userId: user.id,
         defaultVoice: 'us-female',
         voiceSpeed: 1.0,
-        showQuestionAfterSpeech: true,
+        showQuestionAfterSpeech: false,
         autoPlayQuestion: true
       }
     });
