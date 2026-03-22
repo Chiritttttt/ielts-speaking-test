@@ -1734,12 +1734,14 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
   sessionId?: string | null;
 }) {
   const [activeTab, setActiveTab] = useState<'scores' | 'responses' | 'improvements'>('scores');
-  const [modelAudioIds, setModelAudioIds] = useState<Record<number, string>>({});
+  const [modelAudioUrls, setModelAudioUrls] = useState<Record<number, string>>({});
   const [generatingTTS, setGeneratingTTS] = useState<number | null>(null);
+  const [playingModel, setPlayingModel] = useState<number | null>(null);
   const [selectedVoice, setSelectedVoice] = useState<'us-female' | 'uk-female' | 'us-male' | 'uk-male'>('us-female');
   const [exampleAudioUrls, setExampleAudioUrls] = useState<Record<string, string>>({});
   const [playingExample, setPlayingExample] = useState<string | null>(null);
   const exampleAudioRef = useRef<HTMLAudioElement | null>(null);
+  const modelAudioRef = useRef<HTMLAudioElement | null>(null);
   
   // 调试日志
   useEffect(() => {
@@ -1752,9 +1754,35 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
     }
   }, [evaluation]);
 
-  // 生成参考回答 TTS
-  const generateModelAnswerTTS = async (index: number, modelAnswer: string) => {
-    if (!modelAnswer || !sessionId) return;
+  // 生成并播放参考回答 TTS
+  const playModelAnswerTTS = async (index: number, modelAnswer: string) => {
+    // 如果正在播放同一个，停止
+    if (playingModel === index && modelAudioRef.current) {
+      modelAudioRef.current.pause();
+      modelAudioRef.current = null;
+      setPlayingModel(null);
+      return;
+    }
+    
+    // 停止之前的播放
+    if (modelAudioRef.current) {
+      modelAudioRef.current.pause();
+      modelAudioRef.current = null;
+    }
+    
+    // 检查是否已缓存
+    const cacheKey = `${index}_${selectedVoice}`;
+    if (modelAudioUrls[cacheKey]) {
+      const audio = new Audio(modelAudioUrls[cacheKey]);
+      modelAudioRef.current = audio;
+      audio.onended = () => setPlayingModel(null);
+      audio.play();
+      setPlayingModel(index);
+      return;
+    }
+    
+    // 生成新的语音
+    if (!modelAnswer) return;
     
     setGeneratingTTS(index);
     try {
@@ -1764,20 +1792,23 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
         body: JSON.stringify({
           text: modelAnswer,
           voice: selectedVoice,
-          speed: 0.85  // 降低语速，更自然
+          speed: 0.85
         })
       });
 
       if (!response.ok) throw new Error('TTS 服务不可用');
 
       const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
       
-      // 保存到 IndexedDB
-      const responseId = `${Date.now()}_model_${index}_${selectedVoice}`;
-      const audioId = await indexedDBAudio.saveModelAnswerAudio(sessionId, responseId, audioBlob);
+      // 缓存
+      setModelAudioUrls(prev => ({ ...prev, [cacheKey]: audioUrl }));
       
-      setModelAudioIds(prev => ({ ...prev, [index]: audioId }));
-      toast.success('参考回答音频生成完成');
+      const audio = new Audio(audioUrl);
+      modelAudioRef.current = audio;
+      audio.onended = () => setPlayingModel(null);
+      audio.play();
+      setPlayingModel(index);
     } catch (error) {
       console.error('TTS generation error:', error);
       toast.error('参考回答音频生成失败');
@@ -1959,16 +1990,7 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
                       audioId={response.audioId}
                       duration={response.duration} 
                       showDownload={true}
-                      modelAnswer={response.modelAnswer}
-                      modelAnswerAudioId={modelAudioIds[index]}
-                      onGenerateTTS={() => generatingTTS !== index && generateModelAnswerTTS(index, response.modelAnswer)}
                     />
-                    {generatingTTS === index && (
-                      <span className="text-xs text-slate-500 flex items-center gap-1">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        生成音频...
-                      </span>
-                    )}
                   </div>
                   <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
                     {response.transcription || '无转录内容'}
@@ -2019,8 +2041,34 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
                 {/* 参考回答 */}
                 {response.modelAnswer && (
                   <div>
-                    <Label className="text-xs text-slate-500">高分参考回答</Label>
-                    <div className="mt-1 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
+                    <div className="flex items-center justify-between mb-1">
+                      <Label className="text-xs text-slate-500">高分参考回答</Label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => playModelAnswerTTS(index, response.modelAnswer)}
+                        disabled={generatingTTS === index}
+                        className="h-7 text-xs gap-1"
+                      >
+                        {generatingTTS === index ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            生成中...
+                          </>
+                        ) : playingModel === index ? (
+                          <>
+                            <Square className="w-3 h-3" />
+                            停止播放
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="w-3 h-3" />
+                            播放参考
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
                       {response.modelAnswer}
                     </div>
                   </div>
@@ -2128,12 +2176,14 @@ function HistoryView({ sessions, onBack, onRefresh }: {
   const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
   const [viewingSession, setViewingSession] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [modelAudioIds, setModelAudioIds] = useState<Record<number, string>>({});
+  const [modelAudioUrls, setModelAudioUrls] = useState<Record<string, string>>({});
   const [generatingTTS, setGeneratingTTS] = useState<number | null>(null);
+  const [playingModel, setPlayingModel] = useState<number | null>(null);
   const [selectedVoice, setSelectedVoice] = useState<'us-female' | 'uk-female' | 'us-male' | 'uk-male'>('us-female');
   const [exampleAudioUrls, setExampleAudioUrls] = useState<Record<string, string>>({});
   const [playingExample, setPlayingExample] = useState<string | null>(null);
   const exampleAudioRef = useRef<HTMLAudioElement | null>(null);
+  const modelAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const toggleSelect = (id: string) => {
     const newSelected = new Set(selectedSessions);
@@ -2221,7 +2271,8 @@ function HistoryView({ sessions, onBack, onRefresh }: {
       console.log('[History] Response:', data);
       if (data.success && data.session) {
         setViewingSession(data.session);
-        setModelAudioIds({}); // 重置音频 ID
+        setModelAudioUrls({}); // 重置音频缓存
+        setPlayingModel(null); // 重置播放状态
       } else {
         toast.error(data.error || '获取详情失败');
       }
@@ -2231,8 +2282,34 @@ function HistoryView({ sessions, onBack, onRefresh }: {
     }
   };
 
-  // 生成参考回答 TTS
-  const generateModelAnswerTTS = async (index: number, modelAnswer: string, sessionId: string) => {
+  // 播放参考回答 TTS
+  const playModelAnswerTTSInHistory = async (index: number, modelAnswer: string, sessionId: string) => {
+    // 如果正在播放同一个，停止
+    if (playingModel === index && modelAudioRef.current) {
+      modelAudioRef.current.pause();
+      modelAudioRef.current = null;
+      setPlayingModel(null);
+      return;
+    }
+    
+    // 停止之前的播放
+    if (modelAudioRef.current) {
+      modelAudioRef.current.pause();
+      modelAudioRef.current = null;
+    }
+    
+    // 检查是否已缓存
+    const cacheKey = `${sessionId}_${index}_${selectedVoice}`;
+    if (modelAudioUrls[cacheKey]) {
+      const audio = new Audio(modelAudioUrls[cacheKey]);
+      modelAudioRef.current = audio;
+      audio.onended = () => setPlayingModel(null);
+      audio.play();
+      setPlayingModel(index);
+      return;
+    }
+    
+    // 生成新的语音
     if (!modelAnswer) return;
     
     setGeneratingTTS(index);
@@ -2243,20 +2320,23 @@ function HistoryView({ sessions, onBack, onRefresh }: {
         body: JSON.stringify({
           text: modelAnswer,
           voice: selectedVoice,
-          speed: 0.85  // 降低语速，更自然
+          speed: 0.85
         })
       });
 
       if (!response.ok) throw new Error('TTS 服务不可用');
 
       const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
       
-      // 保存到 IndexedDB
-      const responseId = `${Date.now()}_model_${index}_${selectedVoice}`;
-      const audioId = await indexedDBAudio.saveModelAnswerAudio(sessionId, responseId, audioBlob);
+      // 缓存
+      setModelAudioUrls(prev => ({ ...prev, [cacheKey]: audioUrl }));
       
-      setModelAudioIds(prev => ({ ...prev, [index]: audioId }));
-      toast.success('参考回答音频生成完成');
+      const audio = new Audio(audioUrl);
+      modelAudioRef.current = audio;
+      audio.onended = () => setPlayingModel(null);
+      audio.play();
+      setPlayingModel(index);
     } catch (error) {
       console.error('TTS generation error:', error);
       toast.error('参考回答音频生成失败');
@@ -2392,16 +2472,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
                       audioId={response.audioId}
                       duration={response.duration} 
                       showDownload={true}
-                      modelAnswer={response.modelAnswer}
-                      modelAnswerAudioId={modelAudioIds[index]}
-                      onGenerateTTS={() => generatingTTS !== index && generateModelAnswerTTS(index, response.modelAnswer, viewingSession.id)}
                     />
-                    {generatingTTS === index && (
-                      <span className="text-xs text-slate-500 flex items-center gap-1">
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        生成音频...
-                      </span>
-                    )}
                   </div>
                   <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
                     {response.transcription || '无记录'}
@@ -2471,8 +2542,34 @@ function HistoryView({ sessions, onBack, onRefresh }: {
 
                 {response.modelAnswer && (
                   <div>
-                    <Label className="text-xs text-slate-500">参考回答</Label>
-                    <div className="mt-1 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
+                    <div className="flex items-center justify-between mb-1">
+                      <Label className="text-xs text-slate-500">高分参考回答</Label>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => playModelAnswerTTSInHistory(index, response.modelAnswer, viewingSession.id)}
+                        disabled={generatingTTS === index}
+                        className="h-7 text-xs gap-1"
+                      >
+                        {generatingTTS === index ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            生成中...
+                          </>
+                        ) : playingModel === index ? (
+                          <>
+                            <Square className="w-3 h-3" />
+                            停止播放
+                          </>
+                        ) : (
+                          <>
+                            <Volume2 className="w-3 h-3" />
+                            播放参考
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
                       {response.modelAnswer}
                     </div>
                   </div>
