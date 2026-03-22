@@ -1374,7 +1374,7 @@ function TestView({
 }
 
 // Audio Player Component
-function AudioPlayer({ audioBase64, duration }: { audioBase64?: string; duration?: number }) {
+function AudioPlayer({ audioBase64, duration, showDownload = false }: { audioBase64?: string; duration?: number; showDownload?: boolean }) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
@@ -1454,6 +1454,26 @@ function AudioPlayer({ audioBase64, duration }: { audioBase64?: string; duration
     };
   }, []);
 
+  // 下载录音
+  const downloadAudio = () => {
+    if (!audioBase64) return;
+    
+    try {
+      const audioSrc = audioBase64.startsWith('data:') 
+        ? audioBase64 
+        : `data:audio/webm;base64,${audioBase64}`;
+      
+      const link = document.createElement('a');
+      link.href = audioSrc;
+      link.download = `recording-${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.webm`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Download error:', err);
+    }
+  };
+
   if (!audioBase64) return null;
 
   // 使用传入的duration或音频实际时长
@@ -1479,6 +1499,17 @@ function AudioPlayer({ audioBase64, duration }: { audioBase64?: string; duration
           </>
         )}
       </Button>
+      {showDownload && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={downloadAudio}
+          className="gap-1"
+        >
+          <Download className="w-4 h-4" />
+          下载
+        </Button>
+      )}
       {error && (
         <span className="text-xs text-red-500">{error}</span>
       )}
@@ -1611,7 +1642,7 @@ function ResultView({ evaluation, onNext, onRetry }: {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <Label className="text-xs text-slate-500">您的回答</Label>
-                    <AudioPlayer audioBase64={response.audioBase64} duration={response.duration} />
+                    <AudioPlayer audioBase64={response.audioBase64} duration={response.duration} showDownload={true} />
                   </div>
                   <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
                     {response.transcription || '无转录内容'}
@@ -1891,7 +1922,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <Label className="text-xs text-slate-500">您的回答</Label>
-                    <AudioPlayer audioBase64={response.audioBase64} duration={response.duration} />
+                    <AudioPlayer audioBase64={response.audioBase64} duration={response.duration} showDownload={true} />
                   </div>
                   <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
                     {response.transcription || '无记录'}
