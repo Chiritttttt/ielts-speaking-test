@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,32 +12,40 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Initialize ZAI
-    const zai = await ZAI.create();
-
-    // Generate speech using z-ai-web-dev-sdk
-    const response = await zai.audio.speech.create({
-      input: text.substring(0, 4000), // Limit text length
-      voice: voice.includes('female') ? 'alloy' : 'echo',
-      speed: speed
-    });
-
-    // The response contains base64 encoded audio
-    if (response && response.data && response.data[0]?.base64) {
-      const audioBuffer = Buffer.from(response.data[0].base64, 'base64');
+    // 如果配置了 OpenAI API Key，使用 OpenAI TTS
+    if (process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY) {
+      const apiKey = process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY;
       
-      return new NextResponse(audioBuffer, {
+      const response = await fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
         headers: {
-          'Content-Type': 'audio/mpeg',
-          'Content-Length': audioBuffer.byteLength.toString()
-        }
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'tts-1',
+          input: text.substring(0, 4000),
+          voice: voice.includes('female') ? 'alloy' : 'echo',
+          speed: speed
+        })
       });
+
+      if (response.ok) {
+        const audioBuffer = await response.arrayBuffer();
+        return new NextResponse(audioBuffer, {
+          headers: {
+            'Content-Type': 'audio/mpeg',
+            'Content-Length': audioBuffer.byteLength.toString()
+          }
+        });
+      }
     }
 
+    // 返回提示：TTS 服务未配置
     return NextResponse.json({
       success: false,
-      error: 'TTS generation failed'
-    }, { status: 500 });
+      error: 'TTS 服务未配置，请在 .env 文件中设置 OPENAI_API_KEY'
+    }, { status: 503 });
 
   } catch (error) {
     console.error('TTS error:', error);
