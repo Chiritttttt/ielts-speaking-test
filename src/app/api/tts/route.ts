@@ -56,8 +56,15 @@ function splitIntoSentencesWithMeta(text: string): SentenceInfo[] {
     if (/^[-•]\s/.test(trimmedLine)) {
       // 列表项作为单独的一句话处理
       // 移除开头的 "- " 或 "• "
+      let itemText = trimmedLine.replace(/^[-•]\s*/, '');
+      
+      // 移除开头的 "and "（常见于最后一个列表项如 "- and explain..."）
+      if (/^and\s+/i.test(itemText)) {
+        itemText = itemText.replace(/^and\s+/i, '');
+      }
+      
       parts.push({
-        text: trimmedLine.replace(/^[-•]\s*/, ''),
+        text: itemText,
         isListItem: true,
         endsWithColon: false
       });
