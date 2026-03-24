@@ -57,15 +57,23 @@ export async function POST(request: NextRequest) {
       guestId = randomUUID();
     }
 
-    // 检查该访客的测试次数
-    const guestSessionsCount = await db.testSession.count({
-      where: {
-        userId: null,
-        guestId: guestId
-      }
+    // 查询或创建访客使用记录
+    let guestUsage = await db.guestUsage.findUnique({
+      where: { guestId }
     });
 
-    if (guestSessionsCount >= MAX_GUEST_SESSIONS) {
+    if (!guestUsage) {
+      // 创建新的访客记录
+      guestUsage = await db.guestUsage.create({
+        data: {
+          guestId,
+          usedCount: 0
+        }
+      });
+    }
+
+    // 检查访客使用次数
+    if (guestUsage.usedCount >= MAX_GUEST_SESSIONS) {
       const response = NextResponse.json({
         success: false,
         error: '访客试用次数已用完，请注册账号后继续使用',
@@ -73,10 +81,10 @@ export async function POST(request: NextRequest) {
         guestLimitReached: true
       }, { status: 403 });
 
-      // 确保设置 cookie，下次还能识别
+      // 确保设置 cookie
       response.cookies.set(GUEST_COOKIE_NAME, guestId, {
         httpOnly: true,
-        maxAge: 365 * 24 * 60 * 60, // 1年有效期
+        maxAge: 365 * 24 * 60 * 60,
         path: '/'
       });
 
@@ -94,10 +102,16 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    // 增加访客使用次数（独立计数，删除历史记录不影响）
+    await db.guestUsage.update({
+      where: { guestId },
+      data: { usedCount: { increment: 1 } }
+    });
+
     const response = NextResponse.json({
       success: true,
       isGuest: true,
-      remainingGuestSessions: MAX_GUEST_SESSIONS - guestSessionsCount - 1,
+      remainingGuestSessions: MAX_GUEST_SESSIONS - guestUsage.usedCount - 1,
       session: {
         id: session.id,
         testType: session.testType,
@@ -109,7 +123,7 @@ export async function POST(request: NextRequest) {
     // 设置访客 cookie
     response.cookies.set(GUEST_COOKIE_NAME, guestId, {
       httpOnly: true,
-      maxAge: 365 * 24 * 60 * 60, // 1年有效期
+      maxAge: 365 * 24 * 60 * 60,
       path: '/'
     });
 
