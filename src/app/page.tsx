@@ -870,7 +870,7 @@ export default function IELTSSpeakingApp() {
     }
     
     setIsLoading(false);
-    
+
     if (currentQuestionIndex < questions.length - 1) {
       nextQuestion();
     } else {
@@ -880,8 +880,8 @@ export default function IELTSSpeakingApp() {
         setTimeout(() => {
           const pending = useIELTSStore.getState().pendingTranscriptions;
           if (pending.length > 0) {
-            toast.info('正在评估您的回答...');
-            evaluatePart();
+            // 启动后台评估，不阻塞 UI
+            startBackgroundEvaluation();
           } else {
             toast.error('没有待评估的回答');
           }
@@ -1039,6 +1039,9 @@ export default function IELTSSpeakingApp() {
       return;
     }
 
+    // 不设置 isLoading，不阻塞 UI
+    toast.info('正在提交评估，请稍后在历史记录查看结果...');
+
     try {
       // 调用后台评估 API - 立即返回，评估在后台进行
       const response = await fetch('/api/evaluate/start', {
@@ -1053,7 +1056,7 @@ export default function IELTSSpeakingApp() {
       const data = await response.json();
 
       if (data.success) {
-        toast.success('评估已在后台启动，请稍后在历史记录查看结果');
+        toast.success('评估已在后台进行，请稍后在历史记录查看结果');
         clearPendingTranscriptions();
 
         // 立即跳转到历史记录页面，不阻塞
@@ -1218,11 +1221,10 @@ export default function IELTSSpeakingApp() {
   // 结束 Part 3 动态讨论
   const handleEndPart3Discussion = async () => {
     endPart3Discussion();
-    // 评估所有回答
+    // 启动后台评估
     const pending = useIELTSStore.getState().pendingTranscriptions;
     if (pending.length > 0) {
-      toast.info('正在评估您的回答...');
-      await evaluatePart();
+      startBackgroundEvaluation();
     } else {
       toast.warning('没有待评估的回答');
       setView('result');
@@ -1265,8 +1267,8 @@ export default function IELTSSpeakingApp() {
             } else {
               const pending = useIELTSStore.getState().pendingTranscriptions;
               if (pending.length === questions.length) {
-                toast.info('正在评分您的回答...');
-                evaluatePart();
+                // 使用后台评估，不阻塞 UI
+                startBackgroundEvaluation();
               } else {
                 toast.warning('请完成所有题目的录音后再评分');
               }
@@ -3293,28 +3295,19 @@ function HistoryView({ sessions, onBack, onRefresh }: {
       .filter(s => s.evaluationStatus === 'evaluating')
       .map(s => s.id);
 
+    // 清理之前的轮询
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
     if (evaluatingIds.length > 0) {
       setEvaluatingSessions(new Set(evaluatingIds));
 
       // 每3秒轮询一次评估状态
       pollingRef.current = setInterval(async () => {
-        for (const sessionId of evaluatingIds) {
-          try {
-            const response = await fetch(`/api/evaluate/status?sessionId=${sessionId}`);
-            const data = await response.json();
-            if (data.success && data.session.evaluationStatus !== 'evaluating') {
-              // 评估完成或失败，刷新列表
-              onRefresh();
-              setEvaluatingSessions(prev => {
-                const next = new Set(prev);
-                next.delete(sessionId);
-                return next;
-              });
-            }
-          } catch (e) {
-            console.error('Poll evaluation status error:', e);
-          }
-        }
+        // 直接调用 onRefresh 获取最新数据
+        onRefresh();
       }, 3000);
     } else {
       setEvaluatingSessions(new Set());
