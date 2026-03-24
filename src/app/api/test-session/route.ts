@@ -7,11 +7,22 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { testType, userId } = body;
 
-    const currentUserId = userId || `guest_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+    // 确定 userId：如果是 guest 用户或用户不存在，则设为 null
+    let sessionUserId: string | null = null;
+    
+    if (userId && !userId.startsWith('guest')) {
+      // 检查用户是否存在
+      const user = await db.user.findUnique({
+        where: { id: userId }
+      });
+      if (user) {
+        sessionUserId = userId;
+      }
+    }
     
     const session = await db.testSession.create({
       data: {
-        userId: currentUserId.startsWith('guest') ? null : currentUserId,
+        userId: sessionUserId,
         testType: testType || 'full',
         status: 'in_progress'
       }
