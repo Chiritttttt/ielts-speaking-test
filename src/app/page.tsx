@@ -264,34 +264,47 @@ export default function IELTSSpeakingApp() {
     setIsLoading(true);
     try {
       const selectedTopic = topic || TOPICS[`part${part}` as keyof typeof TOPICS]?.[Math.floor(Math.random() * (TOPICS[`part${part}` as keyof typeof TOPICS]?.length || 0))];
-      
+
       // 雅思官方标准问题数量：Part 1: 10个（2-3话题），Part 2: 1个，Part 3: 8个
       const questionCounts: Record<number, number> = { 1: 10, 2: 1, 3: 8 };
       let url = `/api/questions?part=${part}&count=${questionCounts[part] || 4}`;
       if (selectedTopic) url += `&category=${encodeURIComponent(selectedTopic)}`;
-      
+
       const response = await fetch(url);
       const data = await response.json();
-      
+
       if (data.success && data.questions.length > 0) {
         setQuestions(data.questions);
         setSelectedTopic(selectedTopic);
       } else if (autoGenerate) {
+        // 检查用户是否已登录
+        if (!user.isLoggedIn) {
+          toast.info('登录后可自动生成题目，当前使用默认题目');
+          const partKey = `part${part}` as keyof typeof defaultQuestions;
+          setQuestions(defaultQuestions[partKey]);
+          setIsLoading(false);
+          return;
+        }
+
         toast.info(`题库中暂无 ${selectedTopic} 话题的题目，正在自动生成...`);
-        
+
         const generateResponse = await fetch('/api/questions/update', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ part, topic: selectedTopic, count: questionCounts[part] || 4 })
         });
-        
+
         const generateData = await generateResponse.json();
-        
-        if (generateData.success && generateData.saved > 0) {
+
+        if (generateData.needLogin) {
+          toast.error('请先登录后再生成题目');
+          const partKey = `part${part}` as keyof typeof defaultQuestions;
+          setQuestions(defaultQuestions[partKey]);
+        } else if (generateData.success && generateData.saved > 0) {
           toast.success(`成功生成 ${generateData.generated} 道题目`);
           const retryResponse = await fetch(url);
           const retryData = await retryResponse.json();
-          
+
           if (retryData.success && retryData.questions.length > 0) {
             setQuestions(retryData.questions);
             setSelectedTopic(selectedTopic);
@@ -300,7 +313,7 @@ export default function IELTSSpeakingApp() {
             setQuestions(defaultQuestions[partKey]);
           }
         } else {
-          toast.error('题目生成失败，使用默认题目');
+          toast.error(generateData.error || '题目生成失败，使用默认题目');
           const partKey = `part${part}` as keyof typeof defaultQuestions;
           setQuestions(defaultQuestions[partKey]);
         }
@@ -314,7 +327,7 @@ export default function IELTSSpeakingApp() {
       setQuestions(defaultQuestions[partKey]);
     }
     setIsLoading(false);
-  }, [setIsLoading, setQuestions, setSelectedTopic]);
+  }, [setIsLoading, setQuestions, setSelectedTopic, user.isLoggedIn]);
 
   // Create session
   const createSession = async () => {
@@ -1286,7 +1299,7 @@ export default function IELTSSpeakingApp() {
           onRefresh={fetchHistory}
         />;
       case 'questionBank':
-        return <QuestionBankView isLoading={isLoading} setIsLoading={setIsLoading} />;
+        return <QuestionBankView isLoading={isLoading} setIsLoading={setIsLoading} user={user} showLoginDialog={() => setShowLoginDialog(true)} />;
       case 'settings':
         return <SettingsView settings={settings} updateSetting={updateSetting} user={user} />;
       default:
@@ -3821,7 +3834,12 @@ function HistoryView({ sessions, onBack, onRefresh }: {
 }
 
 // Question Bank View
-function QuestionBankView({ isLoading, setIsLoading }: { isLoading: boolean; setIsLoading: (v: boolean) => void }) {
+function QuestionBankView({ isLoading, setIsLoading, user, showLoginDialog }: {
+  isLoading: boolean;
+  setIsLoading: (v: boolean) => void;
+  user: { userId?: string; username?: string; isLoggedIn: boolean };
+  showLoginDialog: () => void;
+}) {
   const [selectedPart, setSelectedPart] = useState('1');
   const [selectedTopic, setSelectedTopic] = useState('');
   const [customTopic, setCustomTopic] = useState('');
@@ -3956,6 +3974,13 @@ function QuestionBankView({ isLoading, setIsLoading }: { isLoading: boolean; set
   };
 
   const generateQuestions = async (randomTopic: boolean = false) => {
+    // 检查用户是否已登录
+    if (!user.isLoggedIn) {
+      toast.error('请先登录后再生成题目');
+      showLoginDialog();
+      return;
+    }
+
     if (!serverKeyReady) {
       toast.error('服务未配置，请联系管理员');
       return;
@@ -3988,8 +4013,11 @@ function QuestionBankView({ isLoading, setIsLoading }: { isLoading: boolean; set
         })
       });
       const data = await response.json();
-      
-      if (data.success) {
+
+      if (data.needLogin) {
+        toast.error('请先登录后再生成题目');
+        showLoginDialog();
+      } else if (data.success) {
         toast.success(`成功生成 ${data.generated} 道题目`);
         loadAllQuestions();
         setCustomTopic('');

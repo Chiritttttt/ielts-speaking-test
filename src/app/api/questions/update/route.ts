@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { callDeepSeek, PART1_GENERATION_PROMPT, PART2_GENERATION_PROMPT, PART3_GENERATION_PROMPT } from '@/lib/deepseek';
+import { getCurrentUser } from '@/lib/auth';
 
 // Check server API key status
 export async function POST(request: NextRequest) {
@@ -111,6 +112,16 @@ async function generateQuestionsWithRetry(
 // Generate new questions
 export async function PUT(request: NextRequest) {
   try {
+    // 检查用户是否已登录
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({
+        success: false,
+        error: '请先登录后再生成题目',
+        needLogin: true
+      }, { status: 401 });
+    }
+
     const body = await request.json();
     const { part, topic, count = 5 } = body;
 
