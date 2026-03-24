@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { after } from 'next/server';
 import { db } from '@/lib/db';
 
+// 并发评估数量
+const CONCURRENCY_LIMIT = 5;
+
 // 启动后台评估 - 立即返回，评估在后台进行
 export async function POST(request: NextRequest) {
   try {
@@ -44,13 +47,11 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    // 保存待评估的转录到临时存储（使用 SpeakingResponse 表，标记为待评估）
-    // 先删除该会话的旧评估数据
+    // 保存待评估的转录到临时存储
     await db.speakingResponse.deleteMany({
       where: { sessionId }
     });
 
-    // 保存转录数据（作为待评估状态）
     for (const t of transcriptions) {
       await db.speakingResponse.create({
         data: {
@@ -60,7 +61,6 @@ export async function POST(request: NextRequest) {
           transcription: t.transcription,
           duration: t.duration,
           audioPath: t.audioId || null,
-          // 分数先设为 null，表示待评估
           fluencyScore: null,
           vocabularyScore: null,
           grammarScore: null,
@@ -75,14 +75,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 使用 Next.js 15 的 after API 确保后台任务在响应发送后执行
-    // 这确保了 API 立即返回，评估真正在后台运行
     after(async () => {
       console.log('[EvaluateStart] Starting background evaluation after response');
       try {
         await runBackgroundEvaluation(sessionId, transcriptions);
       } catch (error) {
         console.error('[EvaluateStart] Background evaluation failed:', error);
-        // 更新失败状态
         try {
           await db.testSession.update({
             where: { id: sessionId },
@@ -111,33 +109,19 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// 后台评估函数
+// 后台评估函数 - 并行评估
 async function runBackgroundEvaluation(sessionId: string, transcriptions: any[]) {
   const { callDeepSeek, getEvaluationPrompt } = await import('@/lib/deepseek');
   
-  console.log('[BackgroundEval] Starting background evaluation for session:', sessionId);
+  console.log('[BackgroundEval] Starting parallel evaluation for session:', sessionId);
   
   const total = transcriptions.length;
   let successCount = 0;
   let totalScores = { fluency: 0, vocabulary: 0, grammar: 0, pronunciation: 0, overall: 0 };
 
-  for (let i = 0; i < transcriptions.length; i++) {
-    const t = transcriptions[i];
+  // 评估单个回答
+  const evaluateSingle = async (t: any, index: number) => {
     const partNumber = t.partNumber || 1;
-    const progress = Math.round(((i + 1) / total) * 100);
-
-    // 更新进度
-    try {
-      await db.testSession.update({
-        where: { id: sessionId },
-        data: {
-          evaluationProgress: progress,
-          evaluationMessage: `正在评估第 ${i + 1}/${total} 个回答...`
-        }
-      });
-    } catch (e) {
-      console.error('[BackgroundEval] Failed to update progress:', e);
-    }
 
     try {
       const evaluationPrompt = getEvaluationPrompt(partNumber);
@@ -155,7 +139,7 @@ Please evaluate this IELTS Speaking response according to Part ${partNumber} req
 
       const result = await callDeepSeek([
         { role: 'user', content: prompt }
-      ], { temperature: 0.3, max_tokens: 2500 });
+      ], { temperature: 0.3, max_tokens: 2000 });
 
       if (result.success && result.content) {
         let jsonStr = result.content
@@ -178,12 +162,6 @@ Please evaluate this IELTS Speaking response according to Part ${partNumber} req
         };
         scores.overall = roundToHalf((scores.fluencyCoherence + scores.lexicalResource + scores.grammaticalRange + scores.pronunciation) / 4);
 
-        totalScores.fluency += scores.fluencyCoherence;
-        totalScores.vocabulary += scores.lexicalResource;
-        totalScores.grammar += scores.grammaticalRange;
-        totalScores.pronunciation += scores.pronunciation;
-        totalScores.overall += scores.overall;
-
         // 更新数据库中的评估结果
         await db.speakingResponse.updateMany({
           where: {
@@ -204,22 +182,52 @@ Please evaluate this IELTS Speaking response according to Part ${partNumber} req
           }
         });
 
-        successCount++;
-        console.log(`[BackgroundEval] Evaluated ${i + 1}/${total} successfully`);
+        console.log(`[BackgroundEval] Evaluated ${index + 1}/${total} successfully, score: ${scores.overall}`);
+        return { success: true, scores };
       }
     } catch (error) {
-      console.error(`[BackgroundEval] Error evaluating response ${i + 1}:`, error);
+      console.error(`[BackgroundEval] Error evaluating response ${index + 1}:`, error);
+    }
+    return { success: false };
+  };
+
+  // 分批并行处理，每批 CONCURRENCY_LIMIT 个
+  for (let i = 0; i < transcriptions.length; i += CONCURRENCY_LIMIT) {
+    const batch = transcriptions.slice(i, i + CONCURRENCY_LIMIT);
+    const batchResults = await Promise.all(
+      batch.map((t, batchIndex) => evaluateSingle(t, i + batchIndex))
+    );
+
+    // 统计成功的评估
+    for (const result of batchResults) {
+      if (result.success && result.scores) {
+        successCount++;
+        totalScores.fluency += result.scores.fluencyCoherence;
+        totalScores.vocabulary += result.scores.lexicalResource;
+        totalScores.grammar += result.scores.grammaticalRange;
+        totalScores.pronunciation += result.scores.pronunciation;
+        totalScores.overall += result.scores.overall;
+      }
     }
 
-    // 添加延迟，避免 API 限流
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // 更新进度
+    const progress = Math.round(((i + batch.length) / total) * 100);
+    try {
+      await db.testSession.update({
+        where: { id: sessionId },
+        data: {
+          evaluationProgress: progress,
+          evaluationMessage: `正在评估... (${Math.min(i + batch.length, total)}/${total})`
+        }
+      });
+    } catch (e) {
+      console.error('[BackgroundEval] Failed to update progress:', e);
+    }
   }
 
   if (successCount > 0) {
-    // 计算平均分
     const avgOverall = totalScores.overall / successCount;
 
-    // 更新会话状态为评估完成
     await db.testSession.update({
       where: { id: sessionId },
       data: {
@@ -233,7 +241,6 @@ Please evaluate this IELTS Speaking response according to Part ${partNumber} req
 
     console.log('[BackgroundEval] Evaluation completed for session:', sessionId, 'Band score:', avgOverall);
   } else {
-    // 评估失败
     await db.testSession.update({
       where: { id: sessionId },
       data: {

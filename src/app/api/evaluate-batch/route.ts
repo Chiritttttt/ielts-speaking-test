@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { callDeepSeek, getEvaluationPrompt } from '@/lib/deepseek';
 
+// 并发评估数量（同时评估几个回答）
+const CONCURRENCY_LIMIT = 5;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { sessionId, partNumber, transcriptions } = body;
 
-    console.log('[Evaluate] Starting evaluation:', { 
+    console.log('[Evaluate] Starting parallel evaluation:', { 
       sessionId, 
       partNumber, 
       transcriptionCount: transcriptions?.length 
@@ -29,20 +32,12 @@ export async function POST(request: NextRequest) {
       }, { status: 503 });
     }
 
-    const results = [];
-    let totalFluency = 0;
-    let totalVocabulary = 0;
-    let totalGrammar = 0;
-    let totalPronunciation = 0;
-    let totalOverall = 0;
-
-    for (let i = 0; i < transcriptions.length; i++) {
-      const transcription = transcriptions[i];
+    // 并行评估单个回答
+    const evaluateSingle = async (transcription: any, index: number) => {
       const currentPartNumber = transcription.partNumber || partNumber || 1;
       
-      console.log(`[Evaluate] Processing transcription ${i + 1}/${transcriptions.length}, Part ${currentPartNumber}`);
+      console.log(`[Evaluate] Processing ${index + 1}/${transcriptions.length}, Part ${currentPartNumber}`);
       
-      // 根据 Part 选择对应的评估 Prompt
       const evaluationPrompt = getEvaluationPrompt(currentPartNumber);
       
       const prompt = `${evaluationPrompt}
@@ -59,124 +54,93 @@ Please evaluate this IELTS Speaking response according to Part ${currentPartNumb
 
       const result = await callDeepSeek([
         { role: 'user', content: prompt }
-      ], { temperature: 0.3, max_tokens: 2500 });
+      ], { temperature: 0.3, max_tokens: 2000 }); // 减少 token 数量加快响应
 
-      if (!result.success) {
-        console.error('[Evaluate] API call failed:', result.error);
-        continue;
+      if (!result.success || !result.content) {
+        console.error(`[Evaluate] API call failed for ${index + 1}:`, result.error);
+        return null;
       }
 
-      if (result.content) {
+      try {
+        let jsonStr = result.content
+          .replace(/```json\n?/g, '')
+          .replace(/```\n?/g, '')
+          .trim();
+        
+        const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+        if (jsonMatch) jsonStr = jsonMatch[0];
+        
+        const evaluation = JSON.parse(jsonStr);
+
+        const roundToHalf = (n: number) => Math.round(n * 2) / 2;
+        const scores = {
+          fluencyCoherence: roundToHalf(Math.min(9, Math.max(0, Number(evaluation.scores?.fluencyCoherence || 6.0)))),
+          lexicalResource: roundToHalf(Math.min(9, Math.max(0, Number(evaluation.scores?.lexicalResource || 6.0)))),
+          grammaticalRange: roundToHalf(Math.min(9, Math.max(0, Number(evaluation.scores?.grammaticalRange || 6.0)))),
+          pronunciation: roundToHalf(Math.min(9, Math.max(0, Number(evaluation.scores?.pronunciation || 6.0)))),
+          overall: 0
+        };
+        scores.overall = roundToHalf((scores.fluencyCoherence + scores.lexicalResource + scores.grammaticalRange + scores.pronunciation) / 4);
+
+        const feedback = evaluation.feedback || {};
+        const modelAnswer = evaluation.modelAnswer || '';
+
+        // 保存到数据库
+        let responseRecord;
         try {
-          // 清理 JSON 字符串
-          let jsonStr = result.content
-            .replace(/```json\n?/g, '')
-            .replace(/```\n?/g, '')
-            .trim();
-          
-          const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            jsonStr = jsonMatch[0];
-          }
-          
-          const evaluation = JSON.parse(jsonStr);
-          console.log('[Evaluate] Parsed evaluation:', {
-            scores: evaluation.scores,
-            hasModelAnswer: !!evaluation.modelAnswer
+          responseRecord = await db.speakingResponse.create({
+            data: {
+              sessionId: sessionId || 'unknown',
+              partNumber: currentPartNumber,
+              questionText: transcription.questionText,
+              transcription: transcription.transcription,
+              duration: transcription.duration,
+              audioPath: transcription.audioId || null,
+              fluencyScore: scores.fluencyCoherence,
+              vocabularyScore: scores.lexicalResource,
+              grammarScore: scores.grammaticalRange,
+              pronunciationScore: scores.pronunciation,
+              overallScore: scores.overall,
+              feedback: JSON.stringify(feedback),
+              improvements: JSON.stringify(evaluation.improvements || []),
+              strengths: JSON.stringify(evaluation.strengths || []),
+              modelAnswer: modelAnswer
+            }
           });
-
-          // 解析分数 - 兼容不同的字段名
-          const scores = {
-            fluencyCoherence: Number(evaluation.scores?.fluencyCoherence || evaluation.scores?.fluency_coherence) || 6.0,
-            lexicalResource: Number(evaluation.scores?.lexicalResource || evaluation.scores?.lexical_resource) || 6.0,
-            grammaticalRange: Number(evaluation.scores?.grammaticalRange || evaluation.scores?.grammatical_range) || 6.0,
-            pronunciation: Number(evaluation.scores?.pronunciation) || 6.0,
-            overall: 0
-          };
-          
-          // 确保分数在有效范围内 (0-9)，支持 0.5 分增量
-          const roundToHalf = (n: number) => Math.round(n * 2) / 2;
-          scores.fluencyCoherence = roundToHalf(Math.min(9, Math.max(0, scores.fluencyCoherence)));
-          scores.lexicalResource = roundToHalf(Math.min(9, Math.max(0, scores.lexicalResource)));
-          scores.grammaticalRange = roundToHalf(Math.min(9, Math.max(0, scores.grammaticalRange)));
-          scores.pronunciation = roundToHalf(Math.min(9, Math.max(0, scores.pronunciation)));
-          scores.overall = roundToHalf((scores.fluencyCoherence + scores.lexicalResource + scores.grammaticalRange + scores.pronunciation) / 4);
-
-          totalFluency += scores.fluencyCoherence;
-          totalVocabulary += scores.lexicalResource;
-          totalGrammar += scores.grammaticalRange;
-          totalPronunciation += scores.pronunciation;
-          totalOverall += scores.overall;
-
-          // 构建反馈对象
-          const feedback = evaluation.feedback || {
-            fluencyCoherence: `Fluency & Coherence: ${scores.fluencyCoherence}`,
-            lexicalResource: `Lexical Resource: ${scores.lexicalResource}`,
-            grammaticalRange: `Grammar: ${scores.grammaticalRange}`,
-            pronunciation: `Pronunciation: ${scores.pronunciation}`
-          };
-
-          // 获取模型答案（参考回答）
-          const modelAnswer = evaluation.modelAnswer || '';
-
-          // 保存到数据库
-          try {
-            const responseRecord = await db.speakingResponse.create({
-              data: {
-                sessionId: sessionId || 'unknown',
-                partNumber: currentPartNumber,
-                questionText: transcription.questionText,
-                transcription: transcription.transcription,
-                duration: transcription.duration,
-                audioPath: transcription.audioId || null, // 存储 audioId 到 audioPath 字段
-                fluencyScore: scores.fluencyCoherence,
-                vocabularyScore: scores.lexicalResource,
-                grammarScore: scores.grammaticalRange,
-                pronunciationScore: scores.pronunciation,
-                overallScore: scores.overall,
-                feedback: JSON.stringify(feedback),
-                improvements: JSON.stringify(evaluation.improvements || []),
-                strengths: JSON.stringify(evaluation.strengths || []),
-                modelAnswer: modelAnswer
-              }
-            });
-
-            results.push({
-              id: responseRecord.id,
-              partNumber: currentPartNumber,
-              questionText: transcription.questionText,
-              transcription: transcription.transcription,
-              audioBase64: transcription.audioBase64,
-              audioId: transcription.audioId, // 传递 audioId
-              duration: transcription.duration,
-              scores,
-              feedback,
-              improvements: evaluation.improvements || [],
-              strengths: evaluation.strengths || [],
-              modelAnswer
-            });
-          } catch (dbError) {
-            console.error('[Evaluate] Database error:', dbError);
-            // 即使数据库保存失败，也返回结果
-            results.push({
-              partNumber: currentPartNumber,
-              questionText: transcription.questionText,
-              transcription: transcription.transcription,
-              audioBase64: transcription.audioBase64,
-              audioId: transcription.audioId,
-              duration: transcription.duration,
-              scores,
-              feedback,
-              improvements: evaluation.improvements || [],
-              strengths: evaluation.strengths || [],
-              modelAnswer
-            });
-          }
-        } catch (parseError) {
-          console.error('[Evaluate] JSON parse error:', parseError);
-          console.error('[Evaluate] Raw content:', result.content?.substring(0, 500));
+        } catch (dbError) {
+          console.error('[Evaluate] Database error:', dbError);
         }
+
+        console.log(`[Evaluate] Completed ${index + 1}/${transcriptions.length}, score: ${scores.overall}`);
+
+        return {
+          id: responseRecord?.id,
+          partNumber: currentPartNumber,
+          questionText: transcription.questionText,
+          transcription: transcription.transcription,
+          audioBase64: transcription.audioBase64,
+          audioId: transcription.audioId,
+          duration: transcription.duration,
+          scores,
+          feedback,
+          improvements: evaluation.improvements || [],
+          strengths: evaluation.strengths || [],
+          modelAnswer
+        };
+      } catch (parseError) {
+        console.error(`[Evaluate] Parse error for ${index + 1}:`, parseError);
+        return null;
       }
+    };
+
+    // 分批并行处理
+    const results: any[] = [];
+    for (let i = 0; i < transcriptions.length; i += CONCURRENCY_LIMIT) {
+      const batch = transcriptions.slice(i, i + CONCURRENCY_LIMIT);
+      const batchResults = await Promise.all(
+        batch.map((t, batchIndex) => evaluateSingle(t, i + batchIndex))
+      );
+      results.push(...batchResults.filter(r => r !== null));
     }
 
     if (results.length === 0) {
@@ -186,29 +150,32 @@ Please evaluate this IELTS Speaking response according to Part ${currentPartNumb
       }, { status: 500 });
     }
 
+    // 计算平均分
+    const totalScores = results.reduce((acc, r) => ({
+      fluency: acc.fluency + r.scores.fluencyCoherence,
+      vocabulary: acc.vocabulary + r.scores.lexicalResource,
+      grammar: acc.grammar + r.scores.grammaticalRange,
+      pronunciation: acc.pronunciation + r.scores.pronunciation,
+      overall: acc.overall + r.scores.overall
+    }), { fluency: 0, vocabulary: 0, grammar: 0, pronunciation: 0, overall: 0 });
+
     const count = results.length;
     const averageScores = {
-      fluencyCoherence: totalFluency / count,
-      lexicalResource: totalVocabulary / count,
-      grammaticalRange: totalGrammar / count,
-      pronunciation: totalPronunciation / count,
-      overall: totalOverall / count
+      fluencyCoherence: totalScores.fluency / count,
+      lexicalResource: totalScores.vocabulary / count,
+      grammaticalRange: totalScores.grammar / count,
+      pronunciation: totalScores.pronunciation / count,
+      overall: totalScores.overall / count
     };
 
-    const partBandScore = (
-      averageScores.fluencyCoherence +
-      averageScores.lexicalResource +
-      averageScores.grammaticalRange +
-      averageScores.pronunciation
-    ) / 4;
+    const partBandScore = averageScores.overall;
 
-    console.log('[Evaluate] Evaluation complete:', { 
+    console.log('[Evaluate] All evaluations complete:', { 
       resultCount: results.length, 
-      averageScores, 
       partBandScore 
     });
 
-    // Update session if this is final evaluation
+    // 更新会话
     if (sessionId && partNumber === 0) {
       try {
         await db.testSession.update({
