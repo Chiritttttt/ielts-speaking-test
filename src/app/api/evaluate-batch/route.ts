@@ -5,10 +5,24 @@ import { callDeepSeek, getEvaluationPrompt } from '@/lib/deepseek';
 // 并发评估数量（同时评估几个回答）
 const CONCURRENCY_LIMIT = 5;
 
+// 转录数据类型
+interface TranscriptionData {
+  partNumber?: number;
+  questionText: string;
+  transcription: string;
+  duration?: number;
+  audioBase64?: string;
+  audioId?: string;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { sessionId, partNumber, transcriptions } = body;
+    const { sessionId, partNumber, transcriptions }: { 
+      sessionId?: string; 
+      partNumber?: number; 
+      transcriptions: TranscriptionData[] 
+    } = body;
 
     console.log('[Evaluate] Starting parallel evaluation:', { 
       sessionId, 
@@ -33,7 +47,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 并行评估单个回答
-    const evaluateSingle = async (transcription: any, index: number) => {
+    const evaluateSingle = async (transcription: TranscriptionData, index: number) => {
       const currentPartNumber = transcription.partNumber || partNumber || 1;
       
       console.log(`[Evaluate] Processing ${index + 1}/${transcriptions.length}, Part ${currentPartNumber}`);
