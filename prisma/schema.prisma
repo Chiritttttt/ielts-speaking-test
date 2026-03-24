@@ -15,10 +15,14 @@ model User {
   name         String?
   avatar       String?
   level        String          @default("intermediate")
+  role         String          @default("user") // user, admin
+  status       String          @default("pending") // pending, approved, rejected, suspended
+  invitedBy    String?         // 邀请人 ID
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   testSessions TestSession[]
   settings     UserSettings?
+  inviteCodes  InviteCode[]    @relation("InviterCodes")
 }
 
 model UserSettings {
@@ -31,6 +35,21 @@ model UserSettings {
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
   user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model InviteCode {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  status      String    @default("active") // active, used, disabled
+  maxUses     Int       @default(1) // 最大使用次数
+  usedCount   Int       @default(0) // 已使用次数
+  expiresAt   DateTime? // 过期时间，null 表示永不过期
+  createdById String    // 创建者 ID
+  usedBy      String?   // 使用者 ID
+  usedAt      DateTime? // 使用时间
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   User      @relation("InviterCodes", fields: [createdById], references: [id])
 }
 
 model TestSession {

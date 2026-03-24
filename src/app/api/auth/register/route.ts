@@ -5,7 +5,7 @@ import { hashPassword, generateToken, setAuthCookie } from '@/lib/auth';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { username, password, name } = body;
+    const { username, password, name, inviteCode } = body;
 
     if (!username || !password) {
       return NextResponse.json({
@@ -28,6 +28,100 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // 检查是否有管理员账号
+    const adminCount = await db.user.count({
+      where: { role: 'admin' }
+    });
+
+    // 如果没有管理员，允许使用初始化密码创建管理员
+    if (adminCount === 0) {
+      const setupCode = process.env.ADMIN_SETUP_CODE || 'IELTS2024';
+      if (inviteCode === setupCode) {
+        // 创建管理员账号
+        const hashedPassword = await hashPassword(password);
+        const user = await db.user.create({
+          data: {
+            username,
+            password: hashedPassword,
+            name: name || 'Administrator',
+            role: 'admin',
+            status: 'approved'
+          }
+        });
+
+        await db.userSettings.create({
+          data: {
+            userId: user.id,
+            defaultVoice: 'us-female',
+            voiceSpeed: 1.0,
+            showQuestionAfterSpeech: false,
+            autoPlayQuestion: true
+          }
+        });
+
+        const token = generateToken(user.id);
+        const response = NextResponse.json({
+          success: true,
+          isAdmin: true,
+          message: '管理员账号创建成功',
+          user: {
+            id: user.id,
+            username: user.username,
+            name: user.name,
+            role: user.role,
+            status: user.status,
+            createdAt: user.createdAt.toISOString()
+          }
+        });
+        
+        setAuthCookie(response, token);
+        return response;
+      }
+    }
+
+    // 正常注册流程：需要邀请码
+    if (!inviteCode) {
+      return NextResponse.json({
+        success: false,
+        error: '需要邀请码才能注册',
+        needsInviteCode: true
+      }, { status: 400 });
+    }
+
+    // 验证邀请码
+    const code = await db.inviteCode.findUnique({
+      where: { code: inviteCode }
+    });
+
+    if (!code) {
+      return NextResponse.json({
+        success: false,
+        error: '邀请码无效'
+      }, { status: 400 });
+    }
+
+    if (code.status === 'disabled') {
+      return NextResponse.json({
+        success: false,
+        error: '邀请码已失效'
+      }, { status: 400 });
+    }
+
+    if (code.expiresAt && new Date() > code.expiresAt) {
+      return NextResponse.json({
+        success: false,
+        error: '邀请码已过期'
+      }, { status: 400 });
+    }
+
+    if (code.usedCount >= code.maxUses) {
+      return NextResponse.json({
+        success: false,
+        error: '邀请码使用次数已达上限'
+      }, { status: 400 });
+    }
+
+    // 检查用户名是否已存在
     const existingUser = await db.user.findUnique({
       where: { username }
     });
@@ -39,13 +133,28 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // 创建用户（状态为 pending，需要管理员审批）
     const hashedPassword = await hashPassword(password);
     const user = await db.user.create({
       data: {
         username,
         password: hashedPassword,
         name: name || username,
-        level: 'intermediate'
+        level: 'intermediate',
+        role: 'user',
+        status: 'pending', // 等待管理员审批
+        invitedBy: code.createdById
+      }
+    });
+
+    // 更新邀请码使用情况
+    await db.inviteCode.update({
+      where: { id: code.id },
+      data: {
+        usedCount: { increment: 1 },
+        status: code.usedCount + 1 >= code.maxUses ? 'used' : 'active',
+        usedBy: user.id,
+        usedAt: new Date()
       }
     });
 
@@ -62,10 +171,13 @@ export async function POST(request: NextRequest) {
     const token = generateToken(user.id);
     const response = NextResponse.json({
       success: true,
+      needApproval: true,
+      message: '注册成功，请等待管理员审批后使用',
       user: {
         id: user.id,
         username: user.username,
         name: user.name,
+        status: user.status,
         level: user.level,
         createdAt: user.createdAt.toISOString()
       }

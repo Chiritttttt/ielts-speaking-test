@@ -33,14 +33,42 @@ export async function POST(request: NextRequest) {
       }, { status: 401 });
     }
 
+    // 检查用户状态
+    if (user.status === 'pending') {
+      return NextResponse.json({
+        success: false,
+        error: '账号正在等待管理员审批，请耐心等待',
+        status: 'pending'
+      }, { status: 403 });
+    }
+
+    if (user.status === 'rejected') {
+      return NextResponse.json({
+        success: false,
+        error: '您的注册申请已被拒绝',
+        status: 'rejected'
+      }, { status: 403 });
+    }
+
+    if (user.status === 'suspended') {
+      return NextResponse.json({
+        success: false,
+        error: '账号已被停用，请联系管理员',
+        status: 'suspended'
+      }, { status: 403 });
+    }
+
     const token = generateToken(user.id);
     const response = NextResponse.json({
       success: true,
+      isAdmin: user.role === 'admin',
       user: {
         id: user.id,
         username: user.username,
         name: user.name,
         level: user.level,
+        role: user.role,
+        status: user.status,
         createdAt: user.createdAt.toISOString()
       }
     });

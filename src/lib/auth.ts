@@ -66,6 +66,51 @@ export function clearAuthCookie(response: NextResponse): void {
   response.cookies.delete(COOKIE_NAME);
 }
 
-export function getAuthToken(request: NextRequest): string | null {
-  return request.cookies.get(COOKIE_NAME)?.value || null;
+export function getAuthToken(request?: NextRequest): string | null {
+  if (request) {
+    return request.cookies.get(COOKIE_NAME)?.value || null;
+  }
+  // 服务端调用时从 cookies 中获取
+  if (typeof globalThis !== 'undefined') {
+    return null;
+  }
+  return null;
+}
+
+// 获取当前用户（包含角色和状态信息）
+export async function getCurrentUser(request?: NextRequest): Promise<{
+  id: string;
+  username: string;
+  name?: string | null;
+  role: string;
+  status: string;
+} | null> {
+  const token = getAuthToken(request);
+  if (!token) return null;
+  
+  const userId = verifyToken(token);
+  if (!userId) return null;
+  
+  try {
+    const { db } = await import('./db');
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, name: true, role: true, status: true }
+    });
+    return user;
+  } catch {
+    return null;
+  }
+}
+
+// 检查用户是否已获批准
+export async function isUserApproved(request?: NextRequest): Promise<boolean> {
+  const user = await getCurrentUser(request);
+  if (!user) return false;
+  
+  // 管理员始终有权限
+  if (user.role === 'admin') return true;
+  
+  // 普通用户需要状态为 approved
+  return user.status === 'approved';
 }
