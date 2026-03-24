@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ViewType = 'home' | 'test' | 'completed' | 'result' | 'improvement' | 'history' | 'questionBank' | 'settings';
+export type ViewType = 'home' | 'test' | 'result' | 'improvement' | 'history' | 'questionBank' | 'settings';
 
 export interface AppSettings {
   defaultVoice: string;
@@ -60,6 +60,15 @@ export interface PendingTranscription {
   audioId?: string; // IndexedDB 音频 ID
 }
 
+// Part 3 对话历史项
+export interface DiscussionItem {
+  question: string;
+  answer: string;
+  questionId: string;
+  audioId?: string;
+  duration?: number;
+}
+
 export interface SessionData {
   id: string;
   testType: string;
@@ -80,6 +89,17 @@ export interface ImprovementPlan {
     tip: string;
   }>;
   quickPractice?: string[];
+}
+
+// Part 3 动态讨论状态
+export interface Part3DiscussionState {
+  isActive: boolean;           // 是否正在动态讨论模式
+  conversationHistory: DiscussionItem[]; // 对话历史
+  currentQuestion: string;     // 当前问题
+  currentQuestionId: string;   // 当前问题 ID
+  questionCount: number;       // 已提问数量
+  isGeneratingQuestion: boolean; // 是否正在生成问题
+  topic: string;               // 讨论话题
 }
 
 const defaultSettings: AppSettings = {
@@ -196,10 +216,18 @@ interface IELTSState {
   setUser: (user: Partial<UserInfo>) => void;
   logout: () => void;
   reset: () => void;
+  // Part 3 动态讨论状态
+  part3Discussion: Part3DiscussionState;
+  initPart3Discussion: (topic: string) => void;
+  addDiscussionItem: (item: DiscussionItem) => void;
+  setCurrentDiscussionQuestion: (question: string, questionId: string) => void;
+  setPart3DiscussionGenerating: (generating: boolean) => void;
+  endPart3Discussion: () => void;
 }
 
 const generateUserId = (): string => {
-  return `user_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+  // 使用 guest_ 前缀，与后端 API 的判断逻辑保持一致
+  return `guest_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
 };
 
 export const useIELTSStore = create<IELTSState>((set, get) => ({
@@ -332,6 +360,69 @@ export const useIELTSStore = create<IELTSState>((set, get) => ({
       isLoading: false,
       settings: state.settings,
       user: state.user,
+      part3Discussion: {
+        isActive: false,
+        conversationHistory: [],
+        currentQuestion: '',
+        currentQuestionId: '',
+        questionCount: 0,
+        isGeneratingQuestion: false,
+        topic: '',
+      },
     });
   },
+  
+  // Part 3 动态讨论状态初始化
+  part3Discussion: {
+    isActive: false,
+    conversationHistory: [],
+    currentQuestion: '',
+    currentQuestionId: '',
+    questionCount: 0,
+    isGeneratingQuestion: false,
+    topic: '',
+  },
+  
+  initPart3Discussion: (topic: string) => set({
+    part3Discussion: {
+      isActive: true,
+      conversationHistory: [],
+      currentQuestion: '',
+      currentQuestionId: '',
+      questionCount: 0,
+      isGeneratingQuestion: false,
+      topic,
+    }
+  }),
+  
+  addDiscussionItem: (item: DiscussionItem) => set((state) => ({
+    part3Discussion: {
+      ...state.part3Discussion,
+      conversationHistory: [...state.part3Discussion.conversationHistory, item],
+      questionCount: state.part3Discussion.questionCount + 1,
+    }
+  })),
+  
+  setCurrentDiscussionQuestion: (question: string, questionId: string) => set((state) => ({
+    part3Discussion: {
+      ...state.part3Discussion,
+      currentQuestion: question,
+      currentQuestionId: questionId,
+    }
+  })),
+  
+  setPart3DiscussionGenerating: (generating: boolean) => set((state) => ({
+    part3Discussion: {
+      ...state.part3Discussion,
+      isGeneratingQuestion: generating,
+    }
+  })),
+  
+  endPart3Discussion: () => set((state) => ({
+    part3Discussion: {
+      ...state.part3Discussion,
+      isActive: false,
+      isGeneratingQuestion: false,
+    }
+  })),
 }));

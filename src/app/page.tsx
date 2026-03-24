@@ -7,7 +7,7 @@ import {
   BarChart3, TrendingUp, BookOpen, Award, Clock, Target, Lightbulb,
   Volume2, CheckCircle2, AlertCircle, Loader2, History, User, Star,
   ArrowRight, RefreshCw, Download, Share2, Database, Plus, Sparkles,
-  Eye, Trash2, X, LogOut
+  Eye, Trash2, X, LogOut, Upload, MessageCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -20,7 +20,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
-import { useIELTSStore, type ResponseData, type ImprovementPlan, type PendingTranscription, loadSettingsFromServer } from '@/store/ielts-store';
+import { useIELTSStore, type ResponseData, type ImprovementPlan, type PendingTranscription, type DiscussionItem, type Part3DiscussionState, loadSettingsFromServer } from '@/store/ielts-store';
 import { LoginDialog, RegisterDialog } from '@/components/auth';
 import { toast } from 'sonner';
 import { indexedDBAudio } from '@/lib/indexeddb-audio';
@@ -33,12 +33,23 @@ const TOPICS = {
 };
 
 const defaultQuestions = {
+  // Part 1: 雅思官方标准 - 8-15个问题，围绕2-3个话题，每个话题3-5个问题
   part1: [
+    // Topic 1: Hometown (4 questions)
     { id: 'p1-1', questionText: "Let's talk about your hometown. Where are you from?", category: "Hometown" },
     { id: 'p1-2', questionText: "What do you like most about living there?", category: "Hometown" },
     { id: 'p1-3', questionText: "Has your hometown changed much in recent years?", category: "Hometown" },
-    { id: 'p1-4', questionText: "Do you work or are you a student?", category: "Work & Study" },
+    { id: 'p1-4', questionText: "Would you like to live there in the future?", category: "Hometown" },
+    // Topic 2: Work & Study (3 questions)
+    { id: 'p1-5', questionText: "Do you work or are you a student?", category: "Work & Study" },
+    { id: 'p1-6', questionText: "What do you enjoy most about your work or studies?", category: "Work & Study" },
+    { id: 'p1-7', questionText: "What are your future career plans?", category: "Work & Study" },
+    // Topic 3: Leisure (3 questions)
+    { id: 'p1-8', questionText: "What do you usually do in your free time?", category: "Leisure" },
+    { id: 'p1-9', questionText: "Do you prefer spending your free time alone or with others?", category: "Leisure" },
+    { id: 'p1-10', questionText: "How has your free time changed since you were a child?", category: "Leisure" },
   ],
+  // Part 2: 雅思官方标准 - 1个问题，准备1分钟，独白1-2分钟
   part2: [
     { 
       id: 'p2-1', 
@@ -46,11 +57,16 @@ const defaultQuestions = {
       category: "Skills"
     }
   ],
+  // Part 3: 雅思官方标准 - 5-10个问题，双向讨论
   part3: [
     { id: 'p3-1', questionText: "What skills are most important for young people to learn today?", category: "Skills" },
     { id: 'p3-2', questionText: "How has technology changed the way people learn new skills?", category: "Skills" },
     { id: 'p3-3', questionText: "Do you think practical skills or academic knowledge is more valuable?", category: "Skills" },
     { id: 'p3-4', questionText: "What role should schools play in developing students' skills?", category: "Skills" },
+    { id: 'p3-5', questionText: "Are there any skills that are becoming less important in modern society?", category: "Skills" },
+    { id: 'p3-6', questionText: "How can governments encourage people to learn new skills?", category: "Skills" },
+    { id: 'p3-7', questionText: "Do you think the skills people need will change significantly in the future?", category: "Skills" },
+    { id: 'p3-8', questionText: "What are the advantages and disadvantages of learning skills online?", category: "Skills" },
   ]
 };
 
@@ -69,6 +85,134 @@ function getBandColor(band: number): string {
   return 'text-red-600 bg-red-50 border-red-200';
 }
 
+// 移动端检测函数
+function isMobileDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  const ua = navigator.userAgent.toLowerCase();
+  const isMobile = /mobile|android|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
+  // 微信内置浏览器检测
+  const isWeChat = /micromessenger/i.test(ua);
+  return isMobile || isWeChat;
+}
+
+// 检测是否支持 Web Speech API
+function supportsSpeechRecognition(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+// 全局音频上下文解锁状态
+let audioContextUnlocked = false;
+
+// 尝试解锁音频上下文（移动端需要用户交互）
+async function unlockAudioContext(): Promise<boolean> {
+  if (audioContextUnlocked) return true;
+  
+  try {
+    // 创建一个短暂的静音音频来解锁
+    const audio = new Audio();
+    audio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYGp/7CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYGp/7CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+    audio.volume = 0.01;
+    await audio.play();
+    audio.pause();
+    audioContextUnlocked = true;
+    console.log('[Audio] Audio context unlocked');
+    return true;
+  } catch (e) {
+    console.warn('[Audio] Failed to unlock audio context:', e);
+    return false;
+  }
+}
+
+// Cue Card 解析和显示组件 - 显示完整题目内容
+function CueCardDisplay({ questionText }: { questionText: string }) {
+  // 解析 Cue Card 格式
+  const parseCueCard = (text: string) => {
+    const lines = text.split('\n').filter(line => line.trim());
+    let topic = '';
+    let bullets: string[] = [];
+    let explanation = '';
+
+    // 找到主标题 (通常是 "Describe..." 开头的行)
+    const topicLine = lines.find(line => line.toLowerCase().startsWith('describe'));
+    if (topicLine) {
+      topic = topicLine.trim();
+    }
+
+    // 找到 "You should say:" 后面的 bullet points
+    const bulletStartIndex = lines.findIndex(line => 
+      line.toLowerCase().includes('you should say')
+    );
+
+    if (bulletStartIndex !== -1) {
+      // 收集 bullet points 和 explanation
+      for (let i = bulletStartIndex + 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('-') || line.startsWith('•')) {
+          const bulletContent = line.replace(/^[-•]\s*/, '');
+          // 检查是否是 "and explain" 开头的行
+          if (bulletContent.toLowerCase().startsWith('and explain')) {
+            explanation = bulletContent;
+          } else {
+            bullets.push(bulletContent);
+          }
+        } else if (line.length > 0 && !line.toLowerCase().includes('follow-up')) {
+          // 处理没有 bullet 符号的行
+          if (line.toLowerCase().startsWith('and explain')) {
+            explanation = line;
+          } else {
+            bullets.push(line);
+          }
+        }
+      }
+    }
+
+    // 如果没有找到标准格式，直接返回原文
+    if (!topic && bullets.length === 0) {
+      return { topic: text, bullets: [], explanation: '' };
+    }
+
+    return { topic, bullets, explanation };
+  };
+
+  const { topic, bullets, explanation } = parseCueCard(questionText);
+
+  return (
+    <div className="space-y-4">
+      {/* 主标题 */}
+      <h3 className="text-lg font-semibold text-slate-800 leading-relaxed">
+        {topic}
+      </h3>
+      
+      {/* Bullet points */}
+      {bullets.length > 0 && (
+        <div className="space-y-3">
+          <p className="text-sm font-medium text-slate-600 uppercase tracking-wide">
+            You should say:
+          </p>
+          <ul className="space-y-2 ml-1">
+            {bullets.map((bullet, index) => (
+              <li key={index} className="flex items-start gap-2">
+                <span className="text-[#E31837] mt-0.5">•</span>
+                <span className="text-slate-700 leading-relaxed">{bullet}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      
+      {/* Explanation - 显示 "and explain..." 部分 */}
+      {explanation && (
+        <div className="pt-2 border-t border-slate-200">
+          <p className="text-slate-700 leading-relaxed italic">
+            {explanation}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function IELTSSpeakingApp() {
   const {
     currentView, setView, testMode, setTestMode, sessionId, setSessionId,
@@ -79,7 +223,10 @@ export default function IELTSSpeakingApp() {
     historySessions, setHistorySessions, isLoading, setIsLoading, reset,
     pendingTranscriptions, addPendingTranscription, clearPendingTranscriptions,
     selectedTopic, setSelectedTopic, settings, updateSetting, loadServerSettings,
-    user, initUser, setUser, logout
+    user, initUser, setUser, logout,
+    // Part 3 动态讨论相关
+    part3Discussion, initPart3Discussion, addDiscussionItem,
+    setCurrentDiscussionQuestion, setPart3DiscussionGenerating, endPart3Discussion
   } = useIELTSStore();
 
   const [showLoginDialog, setShowLoginDialog] = useState(false);
@@ -88,6 +235,17 @@ export default function IELTSSpeakingApp() {
   
   // 评估进度状态
   const [evaluatingProgress, setEvaluatingProgress] = useState<{ current: number; total: number; message: string } | null>(null);
+  
+  // 后台评估状态
+  const [isBackgroundEvaluating, setIsBackgroundEvaluating] = useState(false);
+  const [backgroundEvalSessionId, setBackgroundEvalSessionId] = useState<string | null>(null);
+  
+  // 移动端音频解锁状态
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const [showMobileUnlockDialog, setShowMobileUnlockDialog] = useState(false);
+  
+  // 检测移动端
+  const isMobile = typeof window !== 'undefined' ? isMobileDevice() : false;
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -107,7 +265,9 @@ export default function IELTSSpeakingApp() {
     try {
       const selectedTopic = topic || TOPICS[`part${part}` as keyof typeof TOPICS]?.[Math.floor(Math.random() * (TOPICS[`part${part}` as keyof typeof TOPICS]?.length || 0))];
       
-      let url = `/api/questions?part=${part}&count=${part === 2 ? 1 : 4}`;
+      // 雅思官方标准问题数量：Part 1: 10个（2-3话题），Part 2: 1个，Part 3: 8个
+      const questionCounts: Record<number, number> = { 1: 10, 2: 1, 3: 8 };
+      let url = `/api/questions?part=${part}&count=${questionCounts[part] || 4}`;
       if (selectedTopic) url += `&category=${encodeURIComponent(selectedTopic)}`;
       
       const response = await fetch(url);
@@ -122,7 +282,7 @@ export default function IELTSSpeakingApp() {
         const generateResponse = await fetch('/api/questions/update', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ part, topic: selectedTopic, count: part === 2 ? 1 : 4 })
+          body: JSON.stringify({ part, topic: selectedTopic, count: questionCounts[part] || 4 })
         });
         
         const generateData = await generateResponse.json();
@@ -177,6 +337,49 @@ export default function IELTSSpeakingApp() {
     return null;
   };
 
+  // 清理未完成的会话
+  const cleanupIncompleteSessions = async (currentSessionId?: string) => {
+    try {
+      // 优先使用当前 sessionId 清理
+      if (currentSessionId) {
+        console.log('[Cleanup] Cleaning current incomplete session:', currentSessionId);
+        await fetch('/api/history', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: currentSessionId })
+        });
+        return;
+      }
+      
+      // 否则按 userId 清理
+      const currentUserId = user.userId;
+      if (currentUserId) {
+        console.log('[Cleanup] Cleaning incomplete sessions for user:', currentUserId);
+        await fetch('/api/history', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: currentUserId })
+        });
+      }
+    } catch (error) {
+      console.log('[Cleanup] Error:', error);
+    }
+  };
+
+  // 返回首页（清理未完成的会话）
+  const goHome = async () => {
+    // 如果当前在测试页面且有 sessionId，清理未完成的会话
+    if (currentView === 'test' && sessionId) {
+      // 检查是否有已完成的回答（有 responses 说明已完成评估）
+      const hasCompletedResponses = responses && responses.length > 0;
+      if (!hasCompletedResponses) {
+        await cleanupIncompleteSessions(sessionId);
+      }
+    }
+    reset();
+    setView('home');
+  };
+
   // Open topic dialog
   const openTopicDialog = (mode: 'part1' | 'part2' | 'part3' | 'full') => {
     setPendingTestMode(mode);
@@ -195,6 +398,9 @@ export default function IELTSSpeakingApp() {
     setTestMode(mode);
     clearResponses();
     setCurrentPart(mode === 'full' ? 1 : parseInt(mode.replace('part', '')));
+    
+    // 清理未完成的会话
+    await cleanupIncompleteSessions();
     
     await createSession();
     const part = mode === 'full' ? 1 : parseInt(mode.replace('part', ''));
@@ -221,6 +427,9 @@ export default function IELTSSpeakingApp() {
     clearResponses();
     setCurrentPart(mode === 'full' ? 1 : parseInt(mode.replace('part', '')));
     
+    // 清理未完成的会话
+    await cleanupIncompleteSessions();
+    
     await createSession();
     const part = mode === 'full' ? 1 : parseInt(mode.replace('part', ''));
     
@@ -232,24 +441,136 @@ export default function IELTSSpeakingApp() {
 
   // Recording control
   const startRecording = async () => {
+    console.log('[Recording] startRecording called, isMobile:', isMobile);
+    
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        toast.error('您的浏览器不支持录音功能');
+      // 移动端先解锁音频上下文
+      if (isMobile && !audioUnlocked) {
+        console.log('[Recording] Unlocking audio context for mobile...');
+        const unlocked = await unlockAudioContext();
+        setAudioUnlocked(unlocked);
+        console.log('[Recording] Audio context unlocked:', unlocked);
+      }
+      
+      // 检查浏览器是否支持录音
+      if (!navigator.mediaDevices) {
+        console.error('[Recording] navigator.mediaDevices not available');
+        toast.error('您的浏览器不支持录音功能，请使用 Chrome、Safari 等现代浏览器');
+        return;
+      }
+      
+      if (!navigator.mediaDevices.getUserMedia) {
+        console.error('[Recording] getUserMedia not available');
+        toast.error('您的浏览器不支持录音功能，请使用 Chrome、Safari 等现代浏览器');
         return;
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      console.log('[Recording] Requesting microphone permission...');
+      toast.info('正在请求麦克风权限...');
+
+      // 检测支持的音频格式
+      const mimeTypes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/ogg;codecs=opus',
+        'audio/wav',
+        ''  // 默认格式
+      ];
+      
+      let selectedMimeType = '';
+      
+      // 安全检测支持的格式
+      if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+        for (const mimeType of mimeTypes) {
+          try {
+            if (mimeType === '' || MediaRecorder.isTypeSupported(mimeType)) {
+              selectedMimeType = mimeType;
+              console.log('[Recording] Using mimeType:', mimeType || 'default');
+              break;
+            }
+          } catch (e) {
+            console.warn('[Recording] mimeType check failed:', mimeType, e);
+          }
+        }
+      } else {
+        console.log('[Recording] MediaRecorder.isTypeSupported not available, using default');
+      }
+
+      // 请求麦克风权限
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            sampleRate: 16000
+          } 
+        });
+        console.log('[Recording] Got audio stream, tracks:', stream.getAudioTracks().length);
+      } catch (permError: any) {
+        console.error('[Recording] getUserMedia error:', permError);
+        if (permError.name === 'NotAllowedError' || permError.name === 'PermissionDeniedError') {
+          toast.error('麦克风权限被拒绝，请在浏览器设置中允许访问麦克风');
+        } else if (permError.name === 'NotFoundError') {
+          toast.error('未找到麦克风设备，请确保手机有麦克风');
+        } else if (permError.name === 'NotReadableError') {
+          toast.error('麦克风被其他应用占用，请关闭其他使用麦克风的应用');
+        } else {
+          toast.error(`无法访问麦克风: ${permError.message || permError.name}`);
+        }
+        return;
+      }
+      
+      // 检查 MediaRecorder 是否可用
+      if (typeof MediaRecorder === 'undefined') {
+        console.error('[Recording] MediaRecorder not available');
+        toast.error('您的浏览器不支持录音功能');
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
+      
+      // 创建 MediaRecorder
+      let mediaRecorder: MediaRecorder;
+      try {
+        mediaRecorder = new MediaRecorder(stream, 
+          selectedMimeType ? { mimeType: selectedMimeType } : undefined
+        );
+        console.log('[Recording] MediaRecorder created, mimeType:', mediaRecorder.mimeType);
+      } catch (recorderError: any) {
+        console.error('[Recording] Failed to create MediaRecorder:', recorderError);
+        // 尝试不指定 mimeType
+        try {
+          mediaRecorder = new MediaRecorder(stream);
+          console.log('[Recording] MediaRecorder created with default settings');
+        } catch (fallbackError: any) {
+          console.error('[Recording] Fallback also failed:', fallbackError);
+          toast.error('录音功能初始化失败，请尝试其他浏览器');
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+      }
+      
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       setLiveTranscription('');
       transcriptRef.current = '';
 
       mediaRecorder.ondataavailable = (e) => {
-        audioChunksRef.current.push(e.data);
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+          console.log('[Recording] Chunk received, size:', e.data.size, 'type:', e.data.type);
+        }
       };
 
-      mediaRecorder.start();
+      mediaRecorder.onerror = (event: any) => {
+        console.error('[Recording] MediaRecorder error:', event);
+        toast.error('录音出错: ' + (event.message || '未知错误'));
+        setIsRecording(false);
+      };
+
+      // 使用 timeslice 确保数据定期收集
+      mediaRecorder.start(1000);
       setIsRecording(true);
       setRecordingDuration(0);
 
@@ -259,25 +580,29 @@ export default function IELTSSpeakingApp() {
         setRecordingDuration(duration);
       }, 1000);
 
-      startLiveTranscription();
+      // 尝试启动实时语音识别（移动端可能不支持）
+      const speechSupported = startLiveTranscription();
+      if (!speechSupported && isMobile) {
+        console.log('[Recording] Web Speech API not supported on this device, will use Whisper');
+      }
+      
+      console.log('[Recording] Recording started successfully');
       toast.success('开始录音');
     } catch (error: unknown) {
+      console.error('[Recording] Unexpected error:', error);
       const err = error as Error;
-      if (err.name === 'NotAllowedError') {
-        toast.error('麦克风权限被拒绝');
-      } else {
-        toast.error(`无法访问麦克风: ${err.message}`);
-      }
+      toast.error(`录音失败: ${err.message || '未知错误'}`);
+      setIsRecording(false);
     }
   };
 
-  // Web Speech API live transcription
-  const startLiveTranscription = () => {
+  // Web Speech API live transcription - 返回是否成功启动
+  const startLiveTranscription = (): boolean => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
-      console.warn('[Speech Recognition] Not supported');
-      return;
+      console.warn('[Speech Recognition] Not supported on this browser');
+      return false;
     }
 
     try {
@@ -307,8 +632,10 @@ export default function IELTSSpeakingApp() {
 
       recognition.start();
       recognitionRef.current = recognition;
+      return true;
     } catch (error) {
-      console.warn('[Speech Recognition] Failed:', error);
+      console.warn('[Speech Recognition] Failed to start:', error);
+      return false;
     }
   };
 
@@ -328,27 +655,95 @@ export default function IELTSSpeakingApp() {
     if (mediaRecorderRef.current && isRecording) {
       const webSpeechResult = stopLiveTranscription();
       
+      // 停止录音
       mediaRecorderRef.current.stop();
       setIsRecording(false);
       
       if (timerRef.current) clearInterval(timerRef.current);
 
       mediaRecorderRef.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        // 检查是否有音频数据
+        const chunks = audioChunksRef.current;
+        console.log('[Recording] Stopped, chunks count:', chunks.length);
+        
+        if (chunks.length === 0) {
+          toast.error('录音失败：没有捕获到音频数据，请检查麦克风权限');
+          setIsLoading(false);
+          return;
+        }
+        
+        // 计算总大小
+        const totalSize = chunks.reduce((sum, chunk) => sum + chunk.size, 0);
+        console.log('[Recording] Total audio size:', totalSize, 'bytes');
+        
+        if (totalSize < 1000) {
+          toast.error('录音数据太小，可能没有声音，请重新录音');
+          setIsLoading(false);
+          return;
+        }
+        
+        // 检测音频类型
+        const audioType = chunks[0].type || 'audio/webm';
+        console.log('[Recording] Audio type:', audioType);
+        
+        // 创建音频 Blob
+        const audioBlob = new Blob(chunks, { type: audioType });
+        console.log('[Recording] Blob size:', audioBlob.size, 'type:', audioBlob.type);
+        
         const reader = new FileReader();
         reader.readAsDataURL(audioBlob);
         reader.onloadend = async () => {
           const base64 = reader.result as string;
           const base64Data = base64.split(',')[1];
-          await transcribeAudio(base64Data, webSpeechResult);
+          
+          console.log('[Recording] Base64 length:', base64Data?.length);
+          
+          if (!base64Data || base64Data.length < 100) {
+            toast.error('音频编码失败，请重新录音');
+            setIsLoading(false);
+            return;
+          }
+          
+          await transcribeAudio(base64Data, webSpeechResult, audioType);
         };
+        
+        reader.onerror = (error) => {
+          console.error('[Recording] FileReader error:', error);
+          toast.error('音频处理失败，请重新录音');
+          setIsLoading(false);
+        };
+      };
+      
+      mediaRecorderRef.current.onerror = (event: any) => {
+        console.error('[Recording] Stop error:', event);
+        toast.error('录音停止时出错');
+        setIsLoading(false);
       };
     }
   };
 
-  const transcribeAudio = async (base64: string, webSpeechBackup?: string) => {
+  const transcribeAudio = async (base64: string, webSpeechBackup?: string, audioType?: string) => {
     setIsLoading(true);
     toast.info('正在识别语音...');
+    
+    // 检查录音时长 - 根据 IELTS 标准设置最低时长
+    const minDurations: Record<number, number> = {
+      1: 5,   // Part 1: 至少 5 秒
+      2: 15,  // Part 2: 至少 15 秒
+      3: 10   // Part 3: 至少 10 秒
+    };
+    const minDuration = minDurations[currentPart] || 3;
+    
+    if (recordingDuration && recordingDuration < minDuration) {
+      const suggestions: Record<number, string> = {
+        1: '建议回答 20-30 秒',
+        2: '建议回答 1-2 分钟',
+        3: '建议回答 30-40 秒'
+      };
+      toast.error(`录音时间太短（${recordingDuration}秒），Part ${currentPart} 至少需要 ${minDuration} 秒。${suggestions[currentPart] || ''}`);
+      setIsLoading(false);
+      return;
+    }
     
     // 先保存录音到 IndexedDB
     let audioId: string | undefined;
@@ -361,34 +756,58 @@ export default function IELTSSpeakingApp() {
       console.error('[Audio] Failed to save to IndexedDB:', error);
     }
     
+    // 检查是否有 Web Speech API 的备用结果
+    const hasWebSpeechResult = webSpeechBackup && webSpeechBackup.trim().length > 1;
+    
     try {
+      console.log('[Transcribe] Sending audio to Whisper service, duration:', recordingDuration, 's, type:', audioType);
+      
       const response = await fetch('/api/transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audioBase64: base64 })
+        body: JSON.stringify({ 
+          audioBase64: base64,
+          audioType: audioType || 'audio/webm'
+        })
       });
       const data = await response.json();
       
+      console.log('[Transcribe] Whisper response:', { 
+        success: data.success, 
+        hasTranscription: !!data.transcription,
+        error: data.error 
+      });
+      
       if (data.success && data.transcription && data.transcription.trim().length > 0) {
         processTranscription(data.transcription, base64, audioId);
-      } else if (webSpeechBackup && webSpeechBackup.trim().length > 1) {
+      } else if (hasWebSpeechResult) {
+        console.log('[Transcribe] Using Web Speech API backup result');
         toast.info('使用浏览器语音识别结果');
-        processTranscription(webSpeechBackup, base64, audioId);
+        processTranscription(webSpeechBackup!, base64, audioId);
       } else {
         const errorMsg = data.error || '未检测到语音';
-        if (errorMsg.includes('No audio') || errorMsg.includes('empty')) {
+        if (errorMsg.includes('No audio') || errorMsg.includes('empty') || errorMsg.includes('too short')) {
           toast.error('录音时间太短或没有声音，请重新录音');
+        } else if (errorMsg.includes('Whisper service')) {
+          toast.error('语音识别服务暂时不可用，请稍后重试');
         } else {
           toast.error('语音识别失败: ' + errorMsg);
         }
         setIsLoading(false);
       }
-    } catch (error) {
-      if (webSpeechBackup && webSpeechBackup.trim().length > 1) {
+    } catch (error: any) {
+      console.error('[Transcribe] Error:', error);
+      
+      if (hasWebSpeechResult) {
+        console.log('[Transcribe] Using Web Speech API backup result due to error');
         toast.info('使用浏览器语音识别结果');
-        processTranscription(webSpeechBackup, base64, audioId);
+        processTranscription(webSpeechBackup!, base64, audioId);
       } else {
-        toast.error('语音识别服务出错，请检查 Whisper 服务是否启动');
+        // 移动端更友好的错误提示
+        const errorMessage = isMobile 
+          ? '语音识别服务暂时不可用。请确保：\n1. 录音时清晰说话\n2. 网络连接正常\n3. 稍后重试'
+          : '语音识别服务出错，请检查 Whisper 服务是否启动';
+        toast.error(errorMessage);
         setIsLoading(false);
       }
     }
@@ -411,33 +830,43 @@ export default function IELTSSpeakingApp() {
     } else {
       toast.error('未能识别到语音内容');
     }
-
+    
     setIsLoading(false);
-
+    
     if (currentQuestionIndex < questions.length - 1) {
       nextQuestion();
     } else {
       if (testMode === 'full' && currentPart < 3) {
         setTimeout(() => goToNextPart(), 100);
       } else {
-        // 测试完成，跳转到完成页面（不自动评估）
         setTimeout(() => {
-          setView('completed');
+          const pending = useIELTSStore.getState().pendingTranscriptions;
+          if (pending.length > 0) {
+            toast.info('正在评估您的回答...');
+            evaluatePart();
+          } else {
+            toast.error('没有待评估的回答');
+          }
         }, 100);
       }
     }
   };
 
   const evaluatePart = async () => {
-    setIsLoading(true);
     const transcriptionsToEvaluate = useIELTSStore.getState().pendingTranscriptions;
+    
+    console.log('[EvaluatePart] Starting evaluation, transcriptions count:', transcriptionsToEvaluate.length);
     
     if (transcriptionsToEvaluate.length === 0) {
       toast.error('没有待评估的回答');
-      setIsLoading(false);
       return;
     }
 
+    // 显示后台评估提示
+    setIsBackgroundEvaluating(true);
+    setBackgroundEvalSessionId(sessionId);
+    setIsLoading(true);
+    
     const total = transcriptionsToEvaluate.length;
     setEvaluatingProgress({ current: 0, total, message: '准备评估...' });
 
@@ -448,8 +877,12 @@ export default function IELTSSpeakingApp() {
         const t = transcriptionsToEvaluate[i];
         
         // 调试日志
-        console.log('[Evaluation] Sending transcription audioBase64 exists:', !!t.audioBase64);
-        console.log('[Evaluation] Sending transcription audioBase64 length:', t.audioBase64?.length || 0);
+        console.log('[Evaluation] Sending transcription:', {
+          index: i,
+          questionText: t.questionText?.substring(0, 50),
+          transcriptionLength: t.transcription?.length,
+          hasAudio: !!t.audioBase64
+        });
         
         setEvaluatingProgress({ 
           current: i + 1, 
@@ -468,16 +901,139 @@ export default function IELTSSpeakingApp() {
         });
         
         const data = await response.json();
+        console.log('[Evaluation] API response:', {
+          success: data.success,
+          hasResponses: !!data.responses,
+          responsesLength: data.responses?.length,
+          error: data.error
+        });
+        
+        if (data.success && data.responses?.length > 0) {
+          const responseData = data.responses[0];
+          console.log('[Evaluation] Response data:', {
+            scores: responseData.scores,
+            hasFeedback: !!responseData.feedback,
+            hasModelAnswer: !!responseData.modelAnswer,
+            hasImprovements: !!responseData.improvements
+          });
+          
+          results.push(responseData);
+          addResponse({
+            partNumber: responseData.partNumber || currentPart,
+            questionText: responseData.questionText,
+            transcription: responseData.transcription,
+            audioBase64: responseData.audioBase64,
+            duration: responseData.duration,
+            scores: responseData.scores,
+            feedback: responseData.feedback,
+            improvements: responseData.improvements,
+            modelAnswer: responseData.modelAnswer
+          });
+        } else {
+          console.error('[Evaluation] API returned failure or empty responses:', data);
+        }
+      }
+
+      clearPendingTranscriptions();
+      
+      if (results.length === 0) {
+        toast.error('评估失败，没有生成有效的评估结果');
+        setEvaluatingProgress(null);
+        setIsBackgroundEvaluating(false);
+        setIsLoading(false);
+        return;
+      }
+      
+      // 计算平均分
+      const avgScores = {
+        fluencyCoherence: results.reduce((sum: number, r: any) => sum + (r.scores?.fluencyCoherence || 6), 0) / results.length,
+        lexicalResource: results.reduce((sum: number, r: any) => sum + (r.scores?.lexicalResource || 6), 0) / results.length,
+        grammaticalRange: results.reduce((sum: number, r: any) => sum + (r.scores?.grammaticalRange || 6), 0) / results.length,
+        pronunciation: results.reduce((sum: number, r: any) => sum + (r.scores?.pronunciation || 6), 0) / results.length,
+        overall: 0
+      };
+      avgScores.overall = (avgScores.fluencyCoherence + avgScores.lexicalResource + avgScores.grammaticalRange + avgScores.pronunciation) / 4;
+
+      const evaluationData = {
+        partNumber: currentPart,
+        averageScores: avgScores,
+        partBandScore: avgScores.overall,
+        responses: results
+      };
+      
+      console.log('[Evaluation] Setting currentEvaluation:', evaluationData);
+      setCurrentEvaluation(evaluationData);
+
+      setEvaluatingProgress({ current: total, total, message: '评估完成！' });
+      toast.success(`Part ${currentPart} 评估完成！`);
+      
+      setTimeout(() => {
+        setEvaluatingProgress(null);
+        setView('result');
+      }, 500);
+    } catch (error) {
+      console.error('Evaluation error:', error);
+      toast.error('评估服务出错');
+      setEvaluatingProgress(null);
+    }
+    setIsLoading(false);
+  };
+
+  const goToNextPart = async () => {
+    if (testMode === 'full' && currentPart < 3) {
+      const nextPart = currentPart + 1;
+      setCurrentPart(nextPart);
+      await fetchQuestions(nextPart, selectedTopic);
+      setView('test');
+      toast.info(`进入 Part ${nextPart}`);
+    } else {
+      await evaluateAllParts();
+    }
+  };
+
+  const evaluateAllParts = async () => {
+    const allTranscriptions = useIELTSStore.getState().pendingTranscriptions;
+    
+    if (allTranscriptions.length === 0) {
+      toast.error('没有待评估的回答');
+      return;
+    }
+
+    // 显示后台评估提示
+    setIsBackgroundEvaluating(true);
+    setBackgroundEvalSessionId(sessionId);
+    setIsLoading(true);
+
+    const total = allTranscriptions.length;
+    setEvaluatingProgress({ current: 0, total, message: '准备评估...' });
+
+    try {
+      const results = [];
+      for (let i = 0; i < allTranscriptions.length; i++) {
+        const t = allTranscriptions[i];
+        setEvaluatingProgress({ 
+          current: i + 1, 
+          total, 
+          message: `正在评估第 ${i + 1}/${total} 个回答...` 
+        });
+
+        const response = await fetch('/api/evaluate-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId,
+            partNumber: 0,
+            transcriptions: [t]
+          })
+        });
+        
+        const data = await response.json();
         
         if (data.success && data.responses?.length > 0) {
           results.push(data.responses[0]);
           
-          // 调试日志
-          console.log('[Evaluation] Response audioBase64 exists:', !!data.responses[0].audioBase64);
-          console.log('[Evaluation] Response audioBase64 length:', data.responses[0].audioBase64?.length || 0);
-          
           const responseData: ResponseData = {
-            partNumber: data.responses[0].partNumber || currentPart,
+            partNumber: data.responses[0].partNumber || t.partNumber,
             questionText: data.responses[0].questionText,
             transcription: data.responses[0].transcription,
             audioBase64: data.responses[0].audioBase64,
@@ -504,17 +1060,18 @@ export default function IELTSSpeakingApp() {
       avgScores.overall = (avgScores.fluencyCoherence + avgScores.lexicalResource + avgScores.grammaticalRange + avgScores.pronunciation) / 4;
 
       setCurrentEvaluation({
-        partNumber: currentPart,
+        partNumber: 0,
         averageScores: avgScores,
         partBandScore: avgScores.overall,
         responses: results
       });
 
       setEvaluatingProgress({ current: total, total, message: '评估完成！' });
-      toast.success(`Part ${currentPart} 评估完成！`);
+      toast.success('模拟测试评估完成！');
       
       setTimeout(() => {
         setEvaluatingProgress(null);
+        setIsBackgroundEvaluating(false);
         setView('result');
       }, 500);
     } catch (error) {
@@ -523,59 +1080,6 @@ export default function IELTSSpeakingApp() {
       setEvaluatingProgress(null);
     }
     setIsLoading(false);
-  };
-
-  const goToNextPart = async () => {
-    if (testMode === 'full' && currentPart < 3) {
-      const nextPart = currentPart + 1;
-      setCurrentPart(nextPart);
-      await fetchQuestions(nextPart, selectedTopic);
-      setView('test');
-      toast.info(`进入 Part ${nextPart}`);
-    } else {
-      // 完成测试，跳转到完成页面
-      setView('completed');
-    }
-  };
-
-  // 启动后台评估 - 立即返回，不阻塞 UI
-  const startBackgroundEvaluation = async () => {
-    const allTranscriptions = useIELTSStore.getState().pendingTranscriptions;
-
-    if (allTranscriptions.length === 0) {
-      toast.error('没有待评估的回答');
-      return;
-    }
-
-    const total = allTranscriptions.length;
-
-    try {
-      // 调用后台评估 API - 立即返回，评估在后台进行
-      const response = await fetch('/api/evaluate/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId,
-          transcriptions: allTranscriptions
-        })
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        toast.success('评估已在后台启动，请稍后在历史记录查看结果');
-        clearPendingTranscriptions();
-
-        // 立即跳转到历史记录页面，不阻塞
-        fetchHistory();
-        setView('history');
-      } else {
-        toast.error(data.error || '启动评估失败');
-      }
-    } catch (error) {
-      console.error('Start evaluation error:', error);
-      toast.error('启动评估失败');
-    }
   };
 
   const fetchHistory = async () => {
@@ -634,13 +1138,41 @@ export default function IELTSSpeakingApp() {
     if (user.userId) fetchHistory();
   }, [user.userId]);
 
+  // 结束 Part 3 动态讨论
+  const handleEndPart3Discussion = async () => {
+    endPart3Discussion();
+    // 评估所有回答
+    const pending = useIELTSStore.getState().pendingTranscriptions;
+    if (pending.length > 0) {
+      toast.info('正在评估您的回答...');
+      await evaluatePart();
+    } else {
+      toast.warning('没有待评估的回答');
+      setView('result');
+    }
+  };
+
   // Render different views
   const renderView = () => {
     switch (currentView) {
       case 'home':
         return <HomeView onStartTest={openTopicDialog} onViewHistory={() => { fetchHistory(); setView('history'); }} />;
       case 'test':
-        return <TestView
+        // Part 3 使用动态讨论视图
+        if (currentPart === 3 && part3Discussion.isActive) {
+          return <Part3DiscussionView 
+            discussion={part3Discussion}
+            isRecording={isRecording}
+            recordingDuration={recordingDuration}
+            isLoading={isLoading}
+            onStartRecording={startRecording}
+            onStopRecording={stopRecording}
+            settings={settings}
+            onEndDiscussion={handleEndPart3Discussion}
+            sessionId={sessionId}
+          />;
+        }
+        return <TestView 
           questions={questions}
           currentQuestionIndex={currentQuestionIndex}
           currentPart={currentPart}
@@ -654,8 +1186,13 @@ export default function IELTSSpeakingApp() {
             if (currentQuestionIndex < questions.length - 1) {
               nextQuestion();
             } else {
-              // 最后一题完成，跳转到完成页面
-              setView('completed');
+              const pending = useIELTSStore.getState().pendingTranscriptions;
+              if (pending.length === questions.length) {
+                toast.info('正在评分您的回答...');
+                evaluatePart();
+              } else {
+                toast.warning('请完成所有题目的录音后再评分');
+              }
             }
           }}
           testMode={testMode}
@@ -664,22 +1201,15 @@ export default function IELTSSpeakingApp() {
           settings={settings}
           updateSetting={updateSetting}
         />;
-      case 'completed':
-        return <CompletedView
-          testMode={testMode}
-          pendingCount={pendingTranscriptions.length}
-          onStartEvaluation={startBackgroundEvaluation}
-          onViewHistory={() => { fetchHistory(); setView('history'); }}
-        />;
       case 'result':
-        return <ResultView
+        return <ResultView 
           evaluation={currentEvaluation}
           onNext={goToNextPart}
           onRetry={() => setView('test')}
           sessionId={sessionId}
         />;
       case 'history':
-        return <HistoryView
+        return <HistoryView 
           sessions={historySessions}
           onBack={() => setView('home')}
           onRefresh={fetchHistory}
@@ -698,7 +1228,7 @@ export default function IELTSSpeakingApp() {
       {/* Header */}
       <header className="sticky top-0 z-50 bg-[#E31837] text-white">
         <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => { reset(); setView('home'); }}>
+          <div className="flex items-center gap-2 cursor-pointer" onClick={goHome}>
             <svg width="60" height="24" viewBox="0 0 60 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <text x="2" y="17" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="bold" fill="white" letter-spacing="1.5">
                 IELTS
@@ -710,7 +1240,7 @@ export default function IELTSSpeakingApp() {
           <div className="flex items-center gap-2">
             <nav className="flex items-center">
               {[
-                { label: '首页', view: 'home' as const, action: () => { reset(); setView('home'); } },
+                { label: '首页', view: 'home' as const, action: goHome },
                 { label: '历史', view: 'history' as const, action: () => { fetchHistory(); setView('history'); } },
                 { label: '题库', view: 'questionBank' as const, action: () => setView('questionBank') },
                 { label: '设置', view: 'settings' as const, action: () => setView('settings') },
@@ -928,24 +1458,34 @@ export default function IELTSSpeakingApp() {
         </div>
       )}
 
-      {/* Evaluation progress indicator - 非阻塞的右上角提示 */}
+      {/* Evaluation progress indicator - 后台评估提示 */}
       {evaluatingProgress && (
-        <div className="fixed top-16 right-4 z-50">
-          <div className="bg-white rounded-lg shadow-lg border border-slate-200 p-3 max-w-xs">
-            <div className="flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-[#E31837]" />
-              <span className="text-sm font-medium text-slate-700">后台评估中</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl p-6 shadow-xl max-w-md w-full mx-4">
+            <div className="text-center">
+              <Loader2 className="w-10 h-10 animate-spin text-[#E31837] mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-[#222222] mb-2">正在后台评估中</h3>
+              <p className="text-sm text-[#666666] mb-2">{evaluatingProgress.message}</p>
+              <p className="text-xs text-amber-600 mb-4">
+                评估需要一定时间，请耐心等待。评估完成后将自动显示结果。
+              </p>
+              
+              {/* Progress bar */}
+              <div className="w-full bg-slate-200 rounded-full h-3 mb-2">
+                <div 
+                  className="bg-[#E31837] h-3 rounded-full transition-all duration-300"
+                  style={{ width: `${(evaluatingProgress.current / evaluatingProgress.total) * 100}%` }}
+                />
+              </div>
+              <p className="text-xs text-slate-500">
+                {evaluatingProgress.current} / {evaluatingProgress.total} 个回答已评估
+              </p>
+              
+              {/* 预计时间 */}
+              <p className="text-xs text-slate-400 mt-3">
+                预计还需 {Math.ceil((evaluatingProgress.total - evaluatingProgress.current) * 0.5)} 秒
+              </p>
             </div>
-            <p className="text-xs text-slate-500 mt-1">{evaluatingProgress.message}</p>
-            <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2">
-              <div 
-                className="bg-[#E31837] h-1.5 rounded-full transition-all duration-300"
-                style={{ width: `${(evaluatingProgress.current / evaluatingProgress.total) * 100}%` }}
-              />
-            </div>
-            <p className="text-xs text-slate-400 mt-1">
-              可浏览其他页面，完成后在历史记录查看
-            </p>
           </div>
         </div>
       )}
@@ -978,10 +1518,10 @@ function HomeView({ onStartTest, onViewHistory }: {
         <h2 className="text-xs font-semibold text-[#666666] mb-4 uppercase tracking-wider">选择测试模式</h2>
         <div className="grid grid-cols-2 gap-4">
           {[
-            { mode: 'part1' as const, label: 'Part 1', desc: '简介与面试 · 4题 · 4-5 分钟' },
-            { mode: 'part2' as const, label: 'Part 2', desc: '个人陈述 · 1题 · 3-4 分钟' },
-            { mode: 'part3' as const, label: 'Part 3', desc: '双向讨论 · 4题 · 4-5 分钟' },
-            { mode: 'full' as const, label: '模拟测试', desc: '完整模拟 · 9题 · 11-14 分钟', isFull: true },
+            { mode: 'part1' as const, label: 'Part 1', desc: '简介与面试 · 8-15题 · 4-5分钟' },
+            { mode: 'part2' as const, label: 'Part 2', desc: '个人陈述 · 1题 · 3-4分钟' },
+            { mode: 'part3' as const, label: 'Part 3', desc: '双向讨论 · 5-10题 · 4-5分钟' },
+            { mode: 'full' as const, label: '模拟测试', desc: '完整模拟 · 14-26题 · 11-14分钟', isFull: true },
           ].map((item) => (
             <button
               key={item.mode}
@@ -1034,81 +1574,6 @@ function HomeView({ onStartTest, onViewHistory }: {
   );
 }
 
-// Completed View - 测试完成页面
-function CompletedView({
-  testMode,
-  pendingCount,
-  onStartEvaluation,
-  onViewHistory
-}: {
-  testMode: string;
-  pendingCount: number;
-  onStartEvaluation: () => void;
-  onViewHistory: () => void;
-}) {
-  return (
-    <div className="max-w-lg mx-auto">
-      <Card className="border-0 shadow-sm">
-        <CardHeader className="text-center pb-2">
-          <div className="w-16 h-16 mx-auto bg-green-100 rounded-full flex items-center justify-center mb-4">
-            <CheckCircle2 className="w-8 h-8 text-green-600" />
-          </div>
-          <CardTitle className="text-xl">测试完成</CardTitle>
-          <CardDescription>
-            {testMode === 'full' ? '完整测试已完成' : `Part ${testMode.replace('part', '')} 测试已完成`}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="bg-slate-50 rounded-lg p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-slate-600">已录制回答</span>
-              <span className="font-medium text-slate-900">{pendingCount} 个</span>
-            </div>
-            {pendingCount === 0 && (
-              <p className="text-xs text-amber-600 mt-2">
-                没有录制到有效回答，无法进行评分
-              </p>
-            )}
-          </div>
-
-          <div className="bg-blue-50 rounded-lg p-4">
-            <div className="flex items-start gap-2">
-              <Lightbulb className="w-4 h-4 text-blue-600 mt-0.5" />
-              <div className="text-sm text-blue-800">
-                <p className="font-medium mb-1">评分说明</p>
-                <p className="text-blue-600">
-                  点击"开始评分"后，系统将在后台进行评估。您可以继续浏览其他页面，
-                  评估完成后可在"历史记录"中查看详细结果。
-                </p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-        <CardFooter className="flex flex-col gap-3">
-          <Button
-            onClick={onStartEvaluation}
-            disabled={pendingCount === 0}
-            className="w-full bg-[#E31837] hover:bg-[#C4142D] h-11"
-          >
-            <Sparkles className="w-4 h-4 mr-2" />
-            开始评分
-          </Button>
-          <div className="flex gap-2 w-full">
-            <Button
-              variant="outline"
-              onClick={onViewHistory}
-              className="flex-1"
-            >
-              <History className="w-4 h-4 mr-2" />
-              查看历史记录
-            </Button>
-          </div>
-        </CardFooter>
-      </Card>
-    </div>
-  );
-}
-
 // Test View
 function TestView({ 
   questions, currentQuestionIndex, currentPart, isRecording, recordingDuration,
@@ -1131,6 +1596,84 @@ function TestView({
   settings: { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean };
   updateSetting: <K extends keyof { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean }>(key: K, value: { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean }[K]) => void;
 }) {
+  // 浏览器兼容性检测
+  const [browserSupport, setBrowserSupport] = useState<{
+    checked: boolean;
+    isSecure: boolean;
+    mediaDevices: boolean;
+    getUserMedia: boolean;
+    mediaRecorder: boolean;
+    supported: boolean;
+    message: string;
+  }>({ checked: false, isSecure: false, mediaDevices: false, getUserMedia: false, mediaRecorder: false, supported: false, message: '' });
+  
+  // 检测浏览器兼容性
+  useEffect(() => {
+    const checkBrowserSupport = () => {
+      // 检测是否是安全上下文 (HTTPS 或 localhost)
+      const isSecure = typeof window !== 'undefined' && 
+        (window.location.protocol === 'https:' || 
+         window.location.hostname === 'localhost' || 
+         window.location.hostname === '127.0.0.1');
+      
+      // 在非安全上下文中，navigator.mediaDevices 可能不存在
+      const mediaDevices = typeof navigator !== 'undefined' && !!navigator.mediaDevices;
+      const getUserMedia = mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function';
+      const mediaRecorder = typeof MediaRecorder !== 'undefined';
+      
+      let message = '';
+      if (!isSecure) {
+        message = '录音功能需要 HTTPS 安全连接。请使用 https:// 访问，或使用微信打开链接。';
+      } else if (!mediaDevices) {
+        message = '您的浏览器不支持录音功能。请使用 Chrome、Safari、Edge 等现代浏览器。';
+      } else if (!getUserMedia) {
+        message = '您的浏览器不支持麦克风访问。请使用现代浏览器。';
+      } else if (!mediaRecorder) {
+        message = '您的浏览器不支持录音功能。请更新浏览器版本。';
+      }
+      
+      const supported = isSecure && mediaDevices && getUserMedia && mediaRecorder;
+      
+      setBrowserSupport({
+        checked: true,
+        isSecure,
+        mediaDevices,
+        getUserMedia,
+        mediaRecorder,
+        supported,
+        message
+      });
+      
+      console.log('[Browser Support]', { 
+        protocol: typeof window !== 'undefined' ? window.location.protocol : 'unknown',
+        hostname: typeof window !== 'undefined' ? window.location.hostname : 'unknown',
+        isSecure, 
+        mediaDevices, 
+        getUserMedia, 
+        mediaRecorder, 
+        supported 
+      });
+      
+      // 如果不支持，显示警告
+      if (!supported) {
+        console.warn('[Browser Support] NOT SUPPORTED:', message);
+      }
+    };
+    
+    checkBrowserSupport();
+  }, []);
+  
+  // 处理录音按钮点击
+  const handleStartRecording = () => {
+    console.log('[TestView] Start recording button clicked');
+    
+    if (!browserSupport.supported) {
+      toast.error(browserSupport.message || '您的浏览器不支持录音功能');
+      return;
+    }
+    
+    onStartRecording();
+  };
   const currentQuestion = questions[currentQuestionIndex];
   // 追踪当前题目是否已录音
   const [currentQuestionRecorded, setCurrentQuestionRecorded] = useState(false);
@@ -1141,13 +1684,56 @@ function TestView({
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [needsManualPlay, setNeedsManualPlay] = useState(false); // 移动端需要手动播放
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const prevQuestionIdRef = useRef<string | null>(null);
+  
+  // 移动端检测
+  const isMobile = typeof window !== 'undefined' ? isMobileDevice() : false;
 
   // Part 2 准备时间倒计时
   const [isPreparing, setIsPreparing] = useState(false);
-  const [preparationTime, setPreparationTime] = useState(60); // 60秒准备时间
-  const preparationTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [prepTimeLeft, setPrepTimeLeft] = useState(60); // 60秒准备时间
+  const prepTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 开始准备倒计时
+  const startPreparation = () => {
+    setIsPreparing(true);
+    setPrepTimeLeft(60);
+
+    prepTimerRef.current = setInterval(() => {
+      setPrepTimeLeft((prev) => {
+        if (prev <= 1) {
+          if (prepTimerRef.current) clearInterval(prepTimerRef.current);
+          setIsPreparing(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  // 跳过准备时间
+  const skipPreparation = () => {
+    if (prepTimerRef.current) clearInterval(prepTimerRef.current);
+    setIsPreparing(false);
+    setPrepTimeLeft(0);
+  };
+
+  // 清理准备计时器
+  useEffect(() => {
+    return () => {
+      if (prepTimerRef.current) clearInterval(prepTimerRef.current);
+    };
+  }, []);
+
+  // 当题目变化时，Part 2 重置准备状态
+  useEffect(() => {
+    if (currentPart === 2 && currentQuestion?.id !== prevQuestionIdRef.current) {
+      setIsPreparing(false);
+      setPrepTimeLeft(60);
+    }
+  }, [currentQuestion?.id, currentPart]);
 
   // 播放题目音频
   const playQuestionAudio = useCallback(async () => {
@@ -1246,65 +1832,27 @@ function TestView({
     }
   }, []);
 
-  // 开始 Part 2 准备时间
-  const startPreparation = useCallback(() => {
-    setIsPreparing(true);
-    setPreparationTime(60);
-
-    preparationTimerRef.current = setInterval(() => {
-      setPreparationTime(prev => {
-        if (prev <= 1) {
-          // 准备时间结束，自动开始录音
-          if (preparationTimerRef.current) {
-            clearInterval(preparationTimerRef.current);
-          }
-          setIsPreparing(false);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }, []);
-
-  // 跳过准备时间
-  const skipPreparation = useCallback(() => {
-    if (preparationTimerRef.current) {
-      clearInterval(preparationTimerRef.current);
-    }
-    setIsPreparing(false);
-  }, []);
-
-  // 题目变化时自动播放音频
+  // 题目变化时自动播放音频（移动端需要手动触发）
   useEffect(() => {
     if (currentQuestion && currentQuestion.id !== prevQuestionIdRef.current) {
       prevQuestionIdRef.current = currentQuestion.id;
-
+      
       // 每次新题目都重置为隐藏状态
       setShowQuestion(false);
-
-      // Part 2 第一题：启动准备时间
-      if (currentPart === 2 && currentQuestionIndex === 0 && !currentQuestionRecorded) {
-        setIsPreparing(true);
-        setPreparationTime(60);
-
-        preparationTimerRef.current = setInterval(() => {
-          setPreparationTime(prev => {
-            if (prev <= 1) {
-              if (preparationTimerRef.current) {
-                clearInterval(preparationTimerRef.current);
-              }
-              setIsPreparing(false);
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-      } else {
-        // 检查当前题目是否已被回答
-        setCurrentQuestionRecorded(pendingCount > currentQuestionIndex);
-
-        // 自动播放音频
-        if (settings.autoPlayQuestion) {
+      setNeedsManualPlay(false);
+      
+      // 检查当前题目是否已被回答
+      // 通过 pendingCount 判断：如果 pendingCount > currentQuestionIndex，说明当前题目已回答
+      setCurrentQuestionRecorded(pendingCount > currentQuestionIndex);
+      
+      // 自动播放音频（移动端跳过自动播放，需要用户手动触发）
+      if (settings.autoPlayQuestion) {
+        if (isMobile) {
+          // 移动端显示需要手动播放的提示
+          setNeedsManualPlay(true);
+          console.log('[Audio] Mobile device - manual play required');
+        } else {
+          // 桌面端正常自动播放
           const timer = setTimeout(() => {
             playQuestionAudio();
           }, 300);
@@ -1316,63 +1864,48 @@ function TestView({
     return () => {
       stopAudio();
     };
-  }, [currentQuestion?.id, settings.autoPlayQuestion, playQuestionAudio, stopAudio, pendingCount, currentQuestionIndex]);
+  }, [currentQuestion?.id, settings.autoPlayQuestion, playQuestionAudio, stopAudio, pendingCount, currentQuestionIndex, isMobile]);
 
   // 当 pendingCount 变化时，更新当前题目是否已回答
   useEffect(() => {
     setCurrentQuestionRecorded(pendingCount > currentQuestionIndex);
   }, [pendingCount, currentQuestionIndex]);
 
-  // 组件卸载时清理音频和准备计时器
+  // 组件卸载时清理音频
   useEffect(() => {
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
         URL.revokeObjectURL(audioRef.current.src);
       }
-      if (preparationTimerRef.current) {
-        clearInterval(preparationTimerRef.current);
-      }
     };
   }, []);
 
-  // Part 2 准备时间倒计时 UI
-  if (isPreparing && currentPart === 2) {
+  // 浏览器不兼容提示
+  if (browserSupport.checked && !browserSupport.supported) {
     return (
-      <div className="max-w-3xl mx-auto space-y-6">
-        <div className="flex items-center gap-4">
-          <Badge variant="outline">Part 2</Badge>
-          <Progress value={0} className="flex-1" />
-          <span className="text-sm text-slate-500">准备时间</span>
-        </div>
-
-        <Card className="border-amber-200 bg-amber-50">
-          <CardHeader className="text-center">
-            <CardTitle className="text-2xl text-amber-700">准备时间</CardTitle>
-            <CardDescription className="text-amber-600">
-              请阅读题目并准备您的回答
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-center py-8">
-            <div className="text-7xl font-bold text-amber-600 mb-4">
-              {preparationTime}
+      <Card className="border-2 border-red-200">
+        <CardContent className="pt-8 pb-8 text-center">
+          <AlertCircle className="w-12 h-12 mx-auto text-red-500 mb-4" />
+          <h3 className="text-lg font-semibold text-red-600 mb-2">无法使用录音功能</h3>
+          <p className="text-sm text-slate-600 mb-4 px-4">{browserSupport.message}</p>
+          <div className="text-xs text-slate-500 space-y-1 mb-4 p-3 bg-slate-50 rounded-lg">
+            <p>安全连接 (HTTPS): {browserSupport.isSecure ? '✓' : '✗'}</p>
+            <p>录音设备 API: {browserSupport.mediaDevices ? '✓' : '✗'}</p>
+            <p>麦克风访问: {browserSupport.getUserMedia ? '✓' : '✗'}</p>
+            <p>录音组件: {browserSupport.mediaRecorder ? '✓' : '✗'}</p>
+          </div>
+          {!browserSupport.isSecure && (
+            <div className="text-xs text-amber-600 bg-amber-50 p-3 rounded-lg mb-4">
+              <p className="font-medium">⚠️ 当前不是安全连接</p>
+              <p className="mt-1">请使用微信扫描二维码打开，或确保地址栏显示 🔒 安全标志</p>
             </div>
-            <p className="text-sm text-amber-600 mb-6">秒</p>
-
-            {/* 显示题目 */}
-            <div className="bg-white rounded-lg p-4 mb-6 text-left border border-amber-200">
-              <p className="text-slate-700 whitespace-pre-line">{currentQuestion?.questionText}</p>
-            </div>
-
-            <Button
-              onClick={skipPreparation}
-              className="bg-amber-600 hover:bg-amber-700"
-            >
-              跳过准备，开始录音
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+          )}
+          <p className="text-xs text-slate-400">
+            建议使用：微信扫一扫 / Chrome 浏览器 / Safari 浏览器
+          </p>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -1394,146 +1927,418 @@ function TestView({
         <Progress value={(currentQuestionIndex / questions.length) * 100} className="flex-1" />
         <span className="text-sm text-slate-500">{currentQuestionIndex + 1} / {questions.length}</span>
       </div>
+      
+      {/* 模拟测试模式显示总体进度 */}
+      {testMode === 'full' && (
+        <div className="bg-slate-100 rounded-lg px-4 py-2 text-center">
+          <span className="text-sm text-slate-600">
+            模拟测试进度：Part {currentPart} / 3
+          </span>
+        </div>
+      )}
 
-      <Card>
-        <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-xl">问题 {currentQuestionIndex + 1}</CardTitle>
-            <div className="flex items-center gap-2">
-              {/* 播放/停止音频按钮 */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={isPlayingAudio ? stopAudio : playQuestionAudio}
-                disabled={isLoadingAudio}
-                className="gap-1"
-              >
-                {isLoadingAudio ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    加载中
-                  </>
-                ) : isPlayingAudio ? (
-                  <>
-                    <Square className="w-4 h-4" />
-                    停止
-                  </>
-                ) : (
-                  <>
-                    <Volume2 className="w-4 h-4" />
-                    播放
-                  </>
-                )}
-              </Button>
-              {/* 显示/隐藏题目按钮 */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowQuestion(!showQuestion)}
-                className="gap-1"
-              >
-                <Eye className="w-4 h-4" />
-                {showQuestion ? '隐藏' : '显示'}
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <div className="bg-slate-50 rounded-xl p-6 mb-6 min-h-[140px] flex items-center justify-center">
-            {showQuestion ? (
-              <p className="text-lg text-slate-800 whitespace-pre-line leading-relaxed">
-                {currentQuestion.questionText}
-              </p>
-            ) : (
-              <div className="text-center text-slate-400">
-                <Volume2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                <p className="text-sm">请先听题，然后作答</p>
-                <p className="text-xs mt-1">点击"显示"可查看题目文本</p>
+      {/* Part 2 Cue Card 样式 */}
+      {currentPart === 2 ? (
+        <Card className="border-2 border-red-100 shadow-lg overflow-hidden">
+          <CardHeader className="bg-gradient-to-r from-red-50 to-rose-50 border-b border-red-100">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-xl text-[#E31837]">Cue Card</CardTitle>
+                <Badge className="bg-red-100 text-[#E31837] hover:bg-red-100">Part 2</Badge>
               </div>
-            )}
-          </div>
-
-          {audioError && (
-            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4" />
-              {audioError}
-            </div>
-          )}
-
-          {/* Recording controls */}
-          <div className="flex flex-col items-center gap-6">
-            {isRecording && (
-              <div className="flex items-center gap-2 text-red-600">
-                <div className="w-3 h-3 rounded-full bg-red-600 animate-pulse" />
-                <span className="text-sm font-medium">录音中 {formatTime(recordingDuration)}</span>
-              </div>
-            )}
-
-            <div className="flex items-center gap-4">
-              {isRecording ? (
-                <Button onClick={onStopRecording} size="lg" variant="destructive" className="gap-2">
-                  <Square className="w-5 h-5" />
-                  停止录音
-                </Button>
-              ) : (
-                <Button 
-                  onClick={onStartRecording} 
-                  size="lg" 
-                  className="gap-2 bg-[#E31837] hover:bg-[#C4142D]"
-                  disabled={isPlayingAudio}
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={needsManualPlay ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setNeedsManualPlay(false);
+                    if (isPlayingAudio) {
+                      stopAudio();
+                    } else {
+                      playQuestionAudio();
+                    }
+                  }}
+                  disabled={isLoadingAudio}
+                  className={`gap-1 ${needsManualPlay ? 'bg-[#E31837] hover:bg-[#C4142D] animate-pulse' : ''}`}
                 >
-                  <Mic className="w-5 h-5" />
-                  开始录音
+                  {isLoadingAudio ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : isPlayingAudio ? (
+                    <Square className="w-4 h-4" />
+                  ) : (
+                    <Volume2 className="w-4 h-4" />
+                  )}
                 </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            {/* 移动端播放提示 */}
+            {needsManualPlay && isMobile && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-center">
+                <p className="text-[#E31837] font-medium mb-1">👆 请点击上方播放按钮听题</p>
+                <p className="text-xs text-slate-500">移动端需要手动点击播放音频</p>
+              </div>
+            )}
+            
+            {/* 准备阶段 - 显示开始准备按钮 */}
+            {!isPreparing && prepTimeLeft === 60 && !isRecording && !currentQuestionRecorded ? (
+              <div className="text-center py-8">
+                <div className="bg-slate-50 rounded-xl p-6 mb-6">
+                  <p className="text-[#E31837] font-medium mb-2">IELTS Speaking Part 2</p>
+                  <p className="text-slate-600 text-sm">您将有 <strong>1 分钟</strong> 的准备时间，然后需要讲述 <strong>1-2 分钟</strong></p>
+                </div>
+                <Button 
+                  onClick={startPreparation}
+                  size="lg"
+                  className="gap-2 bg-[#E31837] hover:bg-[#C4142D]"
+                >
+                  <Clock className="w-5 h-5" />
+                  开始准备 (1分钟倒计时)
+                </Button>
+              </div>
+            ) : isPreparing ? (
+              /* 准备倒计时中 */
+              <div className="text-center py-6">
+                <div className="mb-6">
+                  <div className="relative inline-flex items-center justify-center">
+                    <svg className="w-32 h-32 transform -rotate-90">
+                      <circle
+                        cx="64"
+                        cy="64"
+                        r="56"
+                        stroke="#fee2e2"
+                        strokeWidth="8"
+                        fill="none"
+                      />
+                      <circle
+                        cx="64"
+                        cy="64"
+                        r="56"
+                        stroke="#E31837"
+                        strokeWidth="8"
+                        fill="none"
+                        strokeDasharray={352}
+                        strokeDashoffset={352 * (1 - prepTimeLeft / 60)}
+                        className="transition-all duration-1000"
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-4xl font-bold text-[#E31837]">{prepTimeLeft}</span>
+                    </div>
+                  </div>
+                  <p className="text-slate-600 mt-2">准备时间剩余 (秒)</p>
+                </div>
+                
+                {/* Cue Card 内容 - 准备时可见 */}
+                <div className="bg-slate-50 rounded-xl p-6 mb-6 text-left border border-slate-200">
+                  <CueCardDisplay questionText={currentQuestion.questionText} />
+                </div>
+
+                <Button 
+                  onClick={skipPreparation}
+                  variant="outline"
+                  className="gap-2"
+                >
+                  跳过准备，开始录音
+                </Button>
+              </div>
+            ) : (
+              /* 录音阶段 */
+              <div className="space-y-6">
+                {/* Cue Card 内容 */}
+                <div className="bg-slate-50 rounded-xl p-6 text-left border border-slate-200">
+                  <CueCardDisplay questionText={currentQuestion.questionText} />
+                </div>
+
+                {audioError && (
+                  <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    {audioError}
+                  </div>
+                )}
+
+                {/* Recording controls */}
+                <div className="flex flex-col items-center gap-4">
+                  {isRecording && (
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="flex items-center gap-2 text-red-600">
+                        <div className="w-3 h-3 rounded-full bg-red-600 animate-pulse" />
+                        <span className="text-sm font-medium">录音中 {formatTime(recordingDuration)}</span>
+                      </div>
+                      {/* Part 2 时长提示 */}
+                      {recordingDuration && recordingDuration < 60 && (
+                        <span className="text-xs text-slate-500">建议录音 1-2 分钟</span>
+                      )}
+                      {recordingDuration && recordingDuration >= 60 && recordingDuration < 120 && (
+                        <Badge variant="outline" className="text-green-600 border-green-300">✓ 建议时长已达标</Badge>
+                      )}
+                      {recordingDuration && recordingDuration >= 120 && (
+                        <Badge variant="outline" className="text-amber-600 border-amber-300">时长充足，可停止录音</Badge>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-4">
+                    {isRecording ? (
+                      <Button onClick={onStopRecording} size="lg" variant="destructive" className="gap-2">
+                        <Square className="w-5 h-5" />
+                        停止录音
+                      </Button>
+                    ) : (
+                      <Button 
+                        onClick={handleStartRecording} 
+                        size="lg" 
+                        className="gap-2 bg-[#E31837] hover:bg-[#C4142D]"
+                        disabled={isPlayingAudio}
+                      >
+                        <Mic className="w-5 h-5" />
+                        开始录音 (1-2分钟)
+                      </Button>
+                    )}
+                  </div>
+                  
+                  {isPlayingAudio && !isRecording && (
+                    <p className="text-sm text-amber-600 flex items-center gap-2">
+                      <Volume2 className="w-4 h-4" />
+                      音频播放中，请等待播放完毕后再录音
+                    </p>
+                  )}
+
+                  <p className="text-xs text-slate-500 text-center">
+                    请根据 Cue Card 的提示，讲述 1-2 分钟
+                  </p>
+
+                  {/* 显示进度提示 */}
+                  <div className="mt-4 text-center">
+                    <p className="text-sm text-slate-600">
+                      已回答 <span className="font-semibold text-[#E31837]">{pendingCount}</span> / {questions.length} 题
+                    </p>
+                    {!currentQuestionRecorded && (
+                      <p className="text-xs text-amber-600 mt-1">请先录音回答当前题目</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+          <CardFooter className="justify-between border-t border-slate-200 bg-slate-50/50">
+            <Button variant="ghost" onClick={onPrevQuestion} disabled={currentQuestionIndex === 0}>
+              <ChevronLeft className="w-4 h-4 mr-1" /> 上一题
+            </Button>
+            <div className="text-sm text-slate-500">
+              {currentQuestionRecorded ? (
+                <Badge className="bg-green-100 text-green-700 hover:bg-green-100">已录音</Badge>
+              ) : (
+                <span>请完成录音后继续</span>
               )}
             </div>
+            <Button 
+              variant="default"
+              onClick={onNextQuestion}
+              disabled={!currentQuestionRecorded}
+              className={!currentQuestionRecorded ? 'opacity-50' : 'bg-[#E31837] hover:bg-[#C4142D]'}
+            >
+              {currentQuestionIndex < questions.length - 1 ? (
+                <>
+                  下一题
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </>
+              ) : (
+                <>
+                  完成评分
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </>
+              )}
+            </Button>
+          </CardFooter>
+        </Card>
+      ) : (
+        /* Part 1 和 Part 3 的原有样式 */
+        <Card>
+          <CardHeader className="bg-gradient-to-r from-slate-50 to-slate-100 border-b">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-xl">问题 {currentQuestionIndex + 1}</CardTitle>
+              <div className="flex items-center gap-2">
+                {/* 播放/停止音频按钮 */}
+                <Button
+                  variant={needsManualPlay ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setNeedsManualPlay(false);
+                    if (isPlayingAudio) {
+                      stopAudio();
+                    } else {
+                      playQuestionAudio();
+                    }
+                  }}
+                  disabled={isLoadingAudio}
+                  className={`gap-1 ${needsManualPlay ? 'bg-[#E31837] hover:bg-[#C4142D] animate-pulse' : ''}`}
+                >
+                  {isLoadingAudio ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      加载中
+                    </>
+                  ) : isPlayingAudio ? (
+                    <>
+                      <Square className="w-4 h-4" />
+                      停止
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="w-4 h-4" />
+                      {needsManualPlay ? '点击播放题目' : '播放'}
+                    </>
+                  )}
+                </Button>
+                {/* 显示/隐藏题目按钮 */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowQuestion(!showQuestion)}
+                  className="gap-1"
+                >
+                  <Eye className="w-4 h-4" />
+                  {showQuestion ? '隐藏' : '显示'}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-6">
+            {/* 移动端播放提示 */}
+            {needsManualPlay && isMobile && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-center">
+                <p className="text-[#E31837] font-medium mb-1">👆 请点击上方"播放"按钮听题</p>
+                <p className="text-xs text-slate-500">移动端需要手动点击播放音频</p>
+              </div>
+            )}
             
-            {isPlayingAudio && !isRecording && (
-              <p className="text-sm text-amber-600 flex items-center gap-2">
-                <Volume2 className="w-4 h-4" />
-                音频播放中，请等待播放完毕后再录音
-              </p>
+            <div className="bg-slate-50 rounded-xl p-6 mb-6 min-h-[140px] flex items-center justify-center">
+              {showQuestion ? (
+                <p className="text-lg text-slate-800 whitespace-pre-line leading-relaxed">
+                  {currentQuestion.questionText}
+                </p>
+              ) : (
+                <div className="text-center text-slate-400">
+                  <Volume2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">请先听题，然后作答</p>
+                  <p className="text-xs mt-1">点击"显示"可查看题目文本</p>
+                </div>
+              )}
+            </div>
+
+            {audioError && (
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4" />
+                {audioError}
+              </div>
             )}
 
-            <p className="text-xs text-slate-500 text-center">
-              点击"开始录音"后，请对着麦克风清晰回答问题
-            </p>
-            
-            {/* 显示进度提示 */}
-            <div className="mt-4 text-center">
-              <p className="text-sm text-slate-600">
-                已回答 <span className="font-semibold text-[#E31837]">{pendingCount}</span> / {questions.length} 题
-              </p>
-              {!currentQuestionRecorded && (
-                <p className="text-xs text-amber-600 mt-1">请先录音回答当前题目</p>
+            {/* Recording controls */}
+            <div className="flex flex-col items-center gap-6">
+              {isRecording && (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="flex items-center gap-2 text-red-600">
+                    <div className="w-3 h-3 rounded-full bg-red-600 animate-pulse" />
+                    <span className="text-sm font-medium">录音中 {formatTime(recordingDuration)}</span>
+                  </div>
+                  {/* Part 1/3 时长提示 */}
+                  {currentPart === 1 && (
+                    <>
+                      {recordingDuration && recordingDuration < 20 && (
+                        <span className="text-xs text-slate-500">建议回答 20-30 秒</span>
+                      )}
+                      {recordingDuration && recordingDuration >= 20 && recordingDuration < 40 && (
+                        <Badge variant="outline" className="text-green-600 border-green-300">✓ 回答时长达标</Badge>
+                      )}
+                      {recordingDuration && recordingDuration >= 40 && (
+                        <Badge variant="outline" className="text-amber-600 border-amber-300">回答充分，可停止录音</Badge>
+                      )}
+                    </>
+                  )}
+                  {currentPart === 3 && (
+                    <>
+                      {recordingDuration && recordingDuration < 30 && (
+                        <span className="text-xs text-slate-500">建议回答 30-40 秒</span>
+                      )}
+                      {recordingDuration && recordingDuration >= 30 && recordingDuration < 50 && (
+                        <Badge variant="outline" className="text-green-600 border-green-300">✓ 回答时长达标</Badge>
+                      )}
+                      {recordingDuration && recordingDuration >= 50 && (
+                        <Badge variant="outline" className="text-amber-600 border-amber-300">回答充分，可停止录音</Badge>
+                      )}
+                    </>
+                  )}
+                </div>
               )}
+
+              <div className="flex items-center gap-4">
+                {isRecording ? (
+                  <Button onClick={onStopRecording} size="lg" variant="destructive" className="gap-2">
+                    <Square className="w-5 h-5" />
+                    停止录音
+                  </Button>
+                ) : (
+                  <Button 
+                    onClick={handleStartRecording} 
+                    size="lg" 
+                    className="gap-2 bg-[#E31837] hover:bg-[#C4142D]"
+                    disabled={isPlayingAudio}
+                  >
+                    <Mic className="w-5 h-5" />
+                    开始录音
+                  </Button>
+                )}
+              </div>
+              
+              {isPlayingAudio && !isRecording && (
+                <p className="text-sm text-amber-600 flex items-center gap-2">
+                  <Volume2 className="w-4 h-4" />
+                  音频播放中，请等待播放完毕后再录音
+                </p>
+              )}
+
+              <p className="text-xs text-slate-500 text-center">
+                点击"开始录音"后，请对着麦克风清晰回答问题
+              </p>
+              
+              {/* 显示进度提示 */}
+              <div className="mt-4 text-center">
+                <p className="text-sm text-slate-600">
+                  已回答 <span className="font-semibold text-[#E31837]">{pendingCount}</span> / {questions.length} 题
+                </p>
+                {!currentQuestionRecorded && (
+                  <p className="text-xs text-amber-600 mt-1">请先录音回答当前题目</p>
+                )}
+              </div>
             </div>
-          </div>
-        </CardContent>
-        <CardFooter className="justify-between">
-          <Button variant="ghost" onClick={onPrevQuestion} disabled={currentQuestionIndex === 0}>
-            <ChevronLeft className="w-4 h-4 mr-1" /> 上一题
-          </Button>
-          <Button 
-            variant="outline" 
-            onClick={onNextQuestion}
-            disabled={!currentQuestionRecorded}
-            className={!currentQuestionRecorded ? 'opacity-50 cursor-not-allowed' : ''}
-          >
-            {currentQuestionIndex < questions.length - 1 ? (
-              <>
-                下一题
-                <ChevronRight className="w-4 h-4 ml-1" />
-              </>
-            ) : (
-              <>
-                完成评分
-                <ChevronRight className="w-4 h-4 ml-1" />
-              </>
-            )}
-          </Button>
-        </CardFooter>
-      </Card>
+          </CardContent>
+          <CardFooter className="justify-between">
+            <Button variant="ghost" onClick={onPrevQuestion} disabled={currentQuestionIndex === 0}>
+              <ChevronLeft className="w-4 h-4 mr-1" /> 上一题
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={onNextQuestion}
+              disabled={!currentQuestionRecorded}
+              className={!currentQuestionRecorded ? 'opacity-50 cursor-not-allowed' : ''}
+            >
+              {currentQuestionIndex < questions.length - 1 ? (
+                <>
+                  下一题
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </>
+              ) : (
+                <>
+                  完成评分
+                  <ChevronRight className="w-4 h-4 ml-1" />
+                </>
+              )}
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
     </div>
   );
 }
@@ -1863,14 +2668,32 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
   
   // 调试日志
   useEffect(() => {
-    if (evaluation?.responses) {
-      console.log('[ResultView] Responses count:', evaluation.responses.length);
-      evaluation.responses.forEach((r: any, i: number) => {
-        console.log(`[ResultView] Response ${i} audioBase64 exists:`, !!r.audioBase64);
-        console.log(`[ResultView] Response ${i} audioId:`, r.audioId);
-      });
+    console.log('[ResultView] evaluation object:', evaluation);
+    console.log('[ResultView] evaluation type:', typeof evaluation);
+    if (evaluation) {
+      console.log('[ResultView] averageScores:', evaluation.averageScores);
+      console.log('[ResultView] responses:', evaluation.responses);
+      console.log('[ResultView] responses type:', typeof evaluation.responses);
+      console.log('[ResultView] responses length:', evaluation.responses?.length);
     }
   }, [evaluation]);
+
+  // 如果 evaluation 不存在或没有有效数据
+  if (!evaluation || !evaluation.averageScores) {
+    console.log('[ResultView] No evaluation or averageScores, showing loading');
+    return (
+      <Card>
+        <CardContent className="pt-6 text-center">
+          <AlertCircle className="w-10 h-10 mx-auto text-amber-500 mb-3" />
+          <p className="text-slate-700 font-medium">暂无评估结果</p>
+          <p className="text-sm text-slate-500 mt-2">请先完成测试并等待评估完成</p>
+          <Button onClick={onRetry} className="mt-4" variant="outline">
+            重新测试
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   // 生成并播放参考回答 TTS
   const playModelAnswerTTS = async (index: number, modelAnswer: string) => {
@@ -1992,17 +2815,6 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
     }
   };
   
-  if (!evaluation) {
-    return (
-      <Card>
-        <CardContent className="pt-6 text-center">
-          <Loader2 className="w-5 h-5 animate-spin mx-auto text-slate-400" />
-          <p className="text-sm text-slate-500 mt-3">加载中...</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
   const avgScore = evaluation.averageScores?.overall || 
     ((evaluation.averageScores?.fluencyCoherence + evaluation.averageScores?.lexicalResource + 
       evaluation.averageScores?.grammaticalRange + evaluation.averageScores?.pronunciation) / 4);
@@ -2550,7 +3362,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>
-                {viewingSession.testType === 'full' ? '完整测试' : `Part ${viewingSession.testType.replace('part', '')} 练习`}
+                {viewingSession.testType === 'full' ? '模拟测试' : `Part ${viewingSession.testType.replace('part', '')} 练习`}
               </CardTitle>
               {viewingSession.bandScore && (
                 <Badge className={getBandColor(viewingSession.bandScore)}>
@@ -2763,7 +3575,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
                       className="w-4 h-4"
                     />
                     <div className="flex-1">
-                      <p className="font-semibold">{session.testType === 'full' ? '完整测试' : `Part ${session.testType.replace('part', '')} 练习`}</p>
+                      <p className="font-semibold">{session.testType === 'full' ? '模拟测试' : `Part ${session.testType.replace('part', '')} 练习`}</p>
                       <p className="text-sm text-slate-500">{new Date(session.startedAt).toLocaleString('zh-CN')}</p>
                     </div>
                     {session.bandScore && (
@@ -2799,6 +3611,9 @@ function QuestionBankView({ isLoading, setIsLoading }: { isLoading: boolean; set
   const [allQuestions, setAllQuestions] = useState<any[]>([]);
   const [stats, setStats] = useState({ part1: 0, part2: 0, part3: 0, total: 0 });
   const [serverKeyReady, setServerKeyReady] = useState<boolean | null>(null);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadAllQuestions = useCallback(async () => {
     try {
@@ -2830,6 +3645,97 @@ function QuestionBankView({ isLoading, setIsLoading }: { isLoading: boolean; set
     loadAllQuestions();
     fetch('/api/questions/update', { method: 'POST' }).then(r => r.json()).then(d => setServerKeyReady(d.hasServerKey));
   }, [loadAllQuestions]);
+
+  // 导出题库
+  const exportQuestions = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch('/api/questions/import');
+      const data = await response.json();
+      
+      if (data.questions) {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ielts-questions-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success(`已导出 ${data.total} 道题目`);
+      }
+    } catch (error) {
+      toast.error('导出失败');
+    }
+    setIsLoading(false);
+  };
+
+  // 导入题库
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    try {
+      setIsLoading(true);
+      const text = await file.text();
+      const data = JSON.parse(text);
+      
+      if (!data.questions || !Array.isArray(data.questions)) {
+        toast.error('无效的题库格式，请确保包含 questions 数组');
+        setIsLoading(false);
+        return;
+      }
+      
+      const response = await fetch('/api/questions/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questions: data.questions,
+          mode: importMode
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success(result.message);
+        loadAllQuestions();
+        setShowImportDialog(false);
+      } else {
+        toast.error(result.error || '导入失败');
+      }
+    } catch (error) {
+      toast.error('导入失败，请检查文件格式');
+    }
+    setIsLoading(false);
+    
+    // 清空文件输入
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  // 清空题库
+  const clearQuestions = async () => {
+    if (!confirm('确定要清空所有题库吗？此操作不可恢复！')) return;
+    
+    try {
+      setIsLoading(true);
+      const response = await fetch('/api/questions/import', { method: 'DELETE' });
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success(result.message);
+        loadAllQuestions();
+      } else {
+        toast.error('清空失败');
+      }
+    } catch (error) {
+      toast.error('清空失败');
+    }
+    setIsLoading(false);
+  };
 
   const generateQuestions = async (randomTopic: boolean = false) => {
     if (!serverKeyReady) {
@@ -2958,11 +3864,19 @@ function QuestionBankView({ isLoading, setIsLoading }: { isLoading: boolean; set
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2"><BookOpen className="w-5 h-5 text-emerald-500" />题库列表</CardTitle>
-            <select className="px-3 py-1 border rounded-md text-sm" value={selectedPart} onChange={(e) => setSelectedPart(e.target.value)}>
-              <option value="1">Part 1 ({stats.part1}题)</option>
-              <option value="2">Part 2 ({stats.part2}题)</option>
-              <option value="3">Part 3 ({stats.part3}题)</option>
-            </select>
+            <div className="flex items-center gap-2">
+              <Button onClick={exportQuestions} disabled={isLoading || stats.total === 0} variant="outline" size="sm" className="gap-1">
+                <Download className="w-4 h-4" /> 导出
+              </Button>
+              <Button onClick={() => setShowImportDialog(true)} disabled={isLoading} variant="outline" size="sm" className="gap-1">
+                <Upload className="w-4 h-4" /> 导入
+              </Button>
+              <select className="px-3 py-1 border rounded-md text-sm" value={selectedPart} onChange={(e) => setSelectedPart(e.target.value)}>
+                <option value="1">Part 1 ({stats.part1}题)</option>
+                <option value="2">Part 2 ({stats.part2}题)</option>
+                <option value="3">Part 3 ({stats.part3}题)</option>
+              </select>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -2987,6 +3901,335 @@ function QuestionBankView({ isLoading, setIsLoading }: { isLoading: boolean; set
           </div>
         </CardContent>
       </Card>
+
+      {/* 导入对话框 */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>导入题库</DialogTitle>
+            <DialogDescription>
+              从 JSON 文件导入题目，支持追加或替换现有题库
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="importMode" checked={importMode === 'append'} onChange={() => setImportMode('append')} className="w-4 h-4" />
+                <span className="text-sm">追加到现有题库</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="importMode" checked={importMode === 'replace'} onChange={() => setImportMode('replace')} className="w-4 h-4" />
+                <span className="text-sm">替换现有题库</span>
+              </label>
+            </div>
+            
+            <div className="p-4 bg-slate-50 rounded-lg">
+              <p className="text-sm text-slate-600 mb-2">导入格式示例：</p>
+              <pre className="text-xs bg-slate-100 p-2 rounded overflow-x-auto">{`{
+  "questions": [
+    {
+      "partNumber": 1,
+      "category": "Hometown",
+      "questionText": "Where are you from?",
+      "difficulty": "easy"
+    }
+  ]
+}`}</pre>
+            </div>
+            
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleImportFile}
+              className="hidden"
+            />
+          </div>
+          
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowImportDialog(false)}>
+              取消
+            </Button>
+            <Button onClick={() => fileInputRef.current?.click()} className="bg-[#E31837] hover:bg-[#C4142D]">
+              选择文件导入
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// Part 3 动态讨论视图 - 模拟真实考官的双向讨论
+function Part3DiscussionView({
+  discussion,
+  isRecording,
+  recordingDuration,
+  isLoading,
+  onStartRecording,
+  onStopRecording,
+  settings,
+  onEndDiscussion,
+  sessionId
+}: {
+  discussion: {
+    isActive: boolean;
+    conversationHistory: Array<{ question: string; answer: string; questionId: string; audioId?: string; duration?: number }>;
+    currentQuestion: string;
+    currentQuestionId: string;
+    questionCount: number;
+    isGeneratingQuestion: boolean;
+    topic: string;
+  };
+  isRecording: boolean;
+  recordingDuration: number | undefined | null;
+  isLoading: boolean;
+  onStartRecording: () => void;
+  onStopRecording: () => void;
+  settings: { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean };
+  onEndDiscussion: () => void;
+  sessionId?: string | null;
+}) {
+  const [showQuestion, setShowQuestion] = useState(false);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const isMobile = typeof window !== 'undefined' ? isMobileDevice() : false;
+
+  // 自动滚动到最新消息
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+    }
+  }, [discussion.conversationHistory]);
+
+  // 播放当前问题
+  const playQuestionAudio = async () => {
+    if (!discussion.currentQuestion) return;
+    
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: discussion.currentQuestion,
+          voice: settings.defaultVoice,
+          speed: settings.voiceSpeed
+        })
+      });
+      
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      
+      if (audioRef.current) {
+        audioRef.current.pause();
+        URL.revokeObjectURL(audioRef.current.src);
+      }
+      
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+      
+      audio.onended = () => setIsPlayingAudio(false);
+      
+      setIsPlayingAudio(true);
+      await audio.play();
+    } catch (error) {
+      console.error('Audio play error:', error);
+      toast.error('播放失败');
+    }
+  };
+
+  // 停止音频
+  const stopAudio = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      setIsPlayingAudio(false);
+    }
+  };
+
+  // 是否显示"结束讨论"按钮（至少3个问题后）
+  const canEndDiscussion = discussion.questionCount >= 3;
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-4">
+      {/* 标题栏 */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Badge variant="outline" className="text-lg px-3 py-1">Part 3 · 双向讨论</Badge>
+          <span className="text-sm text-slate-500">话题: {discussion.topic}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-slate-500">已讨论 {discussion.questionCount} 个问题</span>
+          {canEndDiscussion && (
+            <Button
+              onClick={onEndDiscussion}
+              variant="outline"
+              className="text-green-600 border-green-300 hover:bg-green-50"
+            >
+              <CheckCircle2 className="w-4 h-4 mr-1" />
+              结束讨论
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* 对话历史 */}
+      <Card className="min-h-[400px]">
+        <CardHeader className="bg-gradient-to-r from-indigo-50 to-purple-50 border-b">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <MessageCircle className="w-5 h-5 text-indigo-600" />
+            讨论记录
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div ref={scrollAreaRef} className="h-[350px] overflow-y-auto p-4 space-y-4">
+            {discussion.conversationHistory.length === 0 && !discussion.currentQuestion && (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                <p>正在生成第一个问题...</p>
+              </div>
+            )}
+            
+            {discussion.conversationHistory.map((item, index) => (
+              <div key={item.questionId || index}>
+                {/* 问题 */}
+                <div className="flex justify-start mb-2">
+                  <div className="max-w-[80%] rounded-xl p-4 bg-indigo-50 border border-indigo-100">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge variant="outline" className="text-xs bg-white">考官 · 问题 {index + 1}</Badge>
+                    </div>
+                    <p className="text-sm leading-relaxed">{item.question}</p>
+                  </div>
+                </div>
+                {/* 回答 */}
+                {item.answer && (
+                  <div className="flex justify-end mb-2">
+                    <div className="max-w-[80%] rounded-xl p-4 bg-slate-100 border border-slate-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="outline" className="text-xs bg-white">你的回答</Badge>
+                        {item.duration && <span className="text-xs text-slate-400">{item.duration}s</span>}
+                      </div>
+                      <p className="text-sm leading-relaxed">{item.answer}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+            
+            {/* 当前问题（未回答） */}
+            {discussion.currentQuestion && (
+              <div className="flex justify-start">
+                <div className="max-w-[80%] rounded-xl p-4 bg-indigo-50 border border-indigo-100">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant="outline" className="text-xs bg-white">考官 · 问题 {discussion.questionCount + 1}</Badge>
+                  </div>
+                  <p className="text-sm leading-relaxed">{discussion.currentQuestion}</p>
+                </div>
+              </div>
+            )}
+            
+            {/* 生成中提示 */}
+            {discussion.isGeneratingQuestion && (
+              <div className="flex justify-start">
+                <div className="max-w-[80%] rounded-xl p-4 bg-indigo-50 border border-indigo-100">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                    <span className="text-sm text-slate-500">正在思考下一个问题...</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 当前问题和控制区 */}
+      {discussion.currentQuestion && !discussion.isGeneratingQuestion && (
+        <Card className="border-2 border-indigo-100">
+          <CardContent className="pt-4 space-y-4">
+            {/* 问题显示 */}
+            <div className="bg-slate-50 rounded-lg p-4 min-h-[80px] flex items-center justify-center">
+              {showQuestion ? (
+                <p className="text-lg text-slate-800">{discussion.currentQuestion}</p>
+              ) : (
+                <div className="text-center text-slate-400">
+                  <Volume2 className="w-6 h-6 mx-auto mb-1 opacity-50" />
+                  <p className="text-sm">点击播放听题，或点击显示查看题目</p>
+                </div>
+              )}
+            </div>
+
+            {/* 音频控制按钮 */}
+            <div className="flex items-center justify-center gap-2">
+              <Button
+                variant={isPlayingAudio ? "destructive" : "outline"}
+                size="sm"
+                onClick={isPlayingAudio ? stopAudio : playQuestionAudio}
+              >
+                {isPlayingAudio ? (
+                  <><Square className="w-4 h-4 mr-1" />停止</>
+                ) : (
+                  <><Volume2 className="w-4 h-4 mr-1" />播放问题</>
+                )}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowQuestion(!showQuestion)}
+              >
+                <Eye className="w-4 h-4 mr-1" />
+                {showQuestion ? '隐藏' : '显示'}
+              </Button>
+            </div>
+
+            {/* 录音控制 */}
+            <div className="flex flex-col items-center gap-4">
+              {isRecording && (
+                <div className="flex items-center gap-2 text-red-600">
+                  <div className="w-3 h-3 rounded-full bg-red-600 animate-pulse" />
+                  <span className="text-sm font-medium">录音中 {formatTime(recordingDuration)}</span>
+                  {recordingDuration && recordingDuration < 30 && (
+                    <span className="text-xs text-slate-500">建议回答 30-40 秒</span>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center gap-4">
+                {isRecording ? (
+                  <Button onClick={onStopRecording} size="lg" variant="destructive" className="gap-2">
+                    <Square className="w-5 h-5" />
+                    停止录音
+                  </Button>
+                ) : (
+                  <Button 
+                    onClick={onStartRecording} 
+                    size="lg" 
+                    className="gap-2 bg-[#E31837] hover:bg-[#C4142D]"
+                    disabled={isPlayingAudio || isLoading}
+                  >
+                    <Mic className="w-5 h-5" />
+                    开始录音
+                  </Button>
+                )}
+              </div>
+              
+              {isLoading && !isRecording && (
+                <p className="text-sm text-slate-500 flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  处理中...
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 提示信息 */}
+      <div className="text-center text-xs text-slate-400">
+        <p>Part 3 是双向讨论，考官会根据你的回答追问。请详细回答每个问题。</p>
+        <p className="mt-1">至少完成 3 个问题后可结束讨论。</p>
+      </div>
     </div>
   );
 }
