@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 interface RegisterDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess: (user: { id: string; username: string; name?: string; role?: string; status?: string }) => void;
+  onSuccess: (user: { id: string; username: string; name?: string; role?: string; status?: string; createdAt?: string }) => void;
   onSwitchToLogin: () => void;
 }
 

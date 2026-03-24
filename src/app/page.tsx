@@ -7,7 +7,7 @@ import {
   BarChart3, TrendingUp, BookOpen, Award, Clock, Target, Lightbulb,
   Volume2, CheckCircle2, AlertCircle, Loader2, History, User, Star,
   ArrowRight, RefreshCw, Download, Share2, Database, Plus, Sparkles,
-  Eye, Trash2, X, LogOut, Upload, MessageCircle
+  Eye, Trash2, X, LogOut, Upload, MessageCircle, Shield
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -231,7 +231,7 @@ export default function IELTSSpeakingApp() {
 
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [showRegisterDialog, setShowRegisterDialog] = useState(false);
-  const [authUser, setAuthUser] = useState<{ id: string; username: string; name?: string } | null>(null);
+  const [authUser, setAuthUser] = useState<{ id: string; username: string; name?: string; role?: string } | null>(null);
   
   // 评估进度状态
   const [evaluatingProgress, setEvaluatingProgress] = useState<{ current: number; total: number; message: string } | null>(null);
@@ -1328,6 +1328,16 @@ export default function IELTSSpeakingApp() {
             
             {authUser ? (
               <div className="flex items-center gap-2 pl-2 border-l border-white/20">
+                {/* 管理员入口 */}
+                {authUser.role === 'admin' && (
+                  <button
+                    onClick={() => window.location.href = '/admin'}
+                    className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
+                    title="管理后台"
+                  >
+                    <Shield className="w-4 h-4" />
+                  </button>
+                )}
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded bg-white/10">
                   <User className="w-4 h-4" />
                   <span className="text-sm">{authUser.username}</span>
@@ -1487,8 +1497,9 @@ export default function IELTSSpeakingApp() {
             userId: user.id,
             username: user.username,
             name: user.name,
+            level: user.level,
             isLoggedIn: true,
-            createdAt: new Date().toISOString()
+            createdAt: user.createdAt || new Date().toISOString()
           });
           loadServerSettings();
         }}
@@ -1509,7 +1520,7 @@ export default function IELTSSpeakingApp() {
             username: user.username,
             name: user.name,
             isLoggedIn: true,
-            createdAt: new Date().toISOString()
+            createdAt: user.createdAt || new Date().toISOString()
           });
           loadServerSettings();
         }}
