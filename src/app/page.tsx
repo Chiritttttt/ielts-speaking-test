@@ -411,23 +411,18 @@ export default function IELTSSpeakingApp() {
     } else {
       toast.error('未能识别到语音内容');
     }
-    
+
     setIsLoading(false);
-    
+
     if (currentQuestionIndex < questions.length - 1) {
       nextQuestion();
     } else {
       if (testMode === 'full' && currentPart < 3) {
         setTimeout(() => goToNextPart(), 100);
       } else {
+        // 测试完成，跳转到完成页面（不自动评估）
         setTimeout(() => {
-          const pending = useIELTSStore.getState().pendingTranscriptions;
-          if (pending.length > 0) {
-            toast.info('正在评估您的回答...');
-            evaluatePart();
-          } else {
-            toast.error('没有待评估的回答');
-          }
+          setView('completed');
         }, 100);
       }
     }
@@ -538,22 +533,21 @@ export default function IELTSSpeakingApp() {
       setView('test');
       toast.info(`进入 Part ${nextPart}`);
     } else {
-      await evaluateAllParts();
+      // 完成测试，跳转到完成页面
+      setView('completed');
     }
   };
 
-  const evaluateAllParts = async () => {
-    setIsLoading(true);
+  // 启动后台评估 - 立即返回，不阻塞 UI
+  const startBackgroundEvaluation = async () => {
     const allTranscriptions = useIELTSStore.getState().pendingTranscriptions;
-    
+
     if (allTranscriptions.length === 0) {
       toast.error('没有待评估的回答');
-      setIsLoading(false);
       return;
     }
 
     const total = allTranscriptions.length;
-    setEvaluatingProgress({ current: 0, total, message: '启动后台评估...' });
 
     try {
       // 调用后台评估 API - 立即返回，评估在后台进行
@@ -565,31 +559,22 @@ export default function IELTSSpeakingApp() {
           transcriptions: allTranscriptions
         })
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         toast.success('评估已在后台启动，请稍后在历史记录查看结果');
         clearPendingTranscriptions();
-        setEvaluatingProgress({ current: total, total, message: '评估已在后台启动' });
-        
-        // 2秒后清除进度提示并跳转到历史记录
-        setTimeout(() => {
-          setEvaluatingProgress(null);
-          setIsLoading(false);
-          fetchHistory();
-          setView('history');
-        }, 2000);
+
+        // 立即跳转到历史记录页面，不阻塞
+        fetchHistory();
+        setView('history');
       } else {
         toast.error(data.error || '启动评估失败');
-        setEvaluatingProgress(null);
-        setIsLoading(false);
       }
     } catch (error) {
       console.error('Start evaluation error:', error);
       toast.error('启动评估失败');
-      setEvaluatingProgress(null);
-      setIsLoading(false);
     }
   };
 
@@ -655,7 +640,7 @@ export default function IELTSSpeakingApp() {
       case 'home':
         return <HomeView onStartTest={openTopicDialog} onViewHistory={() => { fetchHistory(); setView('history'); }} />;
       case 'test':
-        return <TestView 
+        return <TestView
           questions={questions}
           currentQuestionIndex={currentQuestionIndex}
           currentPart={currentPart}
@@ -669,13 +654,8 @@ export default function IELTSSpeakingApp() {
             if (currentQuestionIndex < questions.length - 1) {
               nextQuestion();
             } else {
-              const pending = useIELTSStore.getState().pendingTranscriptions;
-              if (pending.length === questions.length) {
-                toast.info('正在评分您的回答...');
-                evaluatePart();
-              } else {
-                toast.warning('请完成所有题目的录音后再评分');
-              }
+              // 最后一题完成，跳转到完成页面
+              setView('completed');
             }
           }}
           testMode={testMode}
@@ -684,15 +664,22 @@ export default function IELTSSpeakingApp() {
           settings={settings}
           updateSetting={updateSetting}
         />;
+      case 'completed':
+        return <CompletedView
+          testMode={testMode}
+          pendingCount={pendingTranscriptions.length}
+          onStartEvaluation={startBackgroundEvaluation}
+          onViewHistory={() => { fetchHistory(); setView('history'); }}
+        />;
       case 'result':
-        return <ResultView 
+        return <ResultView
           evaluation={currentEvaluation}
           onNext={goToNextPart}
           onRetry={() => setView('test')}
           sessionId={sessionId}
         />;
       case 'history':
-        return <HistoryView 
+        return <HistoryView
           sessions={historySessions}
           onBack={() => setView('home')}
           onRefresh={fetchHistory}
@@ -1043,6 +1030,81 @@ function HomeView({ onStartTest, onViewHistory }: {
         </div>
         <p className="text-white/40 text-xs">口语练习平台</p>
       </footer>
+    </div>
+  );
+}
+
+// Completed View - 测试完成页面
+function CompletedView({
+  testMode,
+  pendingCount,
+  onStartEvaluation,
+  onViewHistory
+}: {
+  testMode: string;
+  pendingCount: number;
+  onStartEvaluation: () => void;
+  onViewHistory: () => void;
+}) {
+  return (
+    <div className="max-w-lg mx-auto">
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="text-center pb-2">
+          <div className="w-16 h-16 mx-auto bg-green-100 rounded-full flex items-center justify-center mb-4">
+            <CheckCircle2 className="w-8 h-8 text-green-600" />
+          </div>
+          <CardTitle className="text-xl">测试完成</CardTitle>
+          <CardDescription>
+            {testMode === 'full' ? '完整测试已完成' : `Part ${testMode.replace('part', '')} 测试已完成`}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-slate-50 rounded-lg p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-slate-600">已录制回答</span>
+              <span className="font-medium text-slate-900">{pendingCount} 个</span>
+            </div>
+            {pendingCount === 0 && (
+              <p className="text-xs text-amber-600 mt-2">
+                没有录制到有效回答，无法进行评分
+              </p>
+            )}
+          </div>
+
+          <div className="bg-blue-50 rounded-lg p-4">
+            <div className="flex items-start gap-2">
+              <Lightbulb className="w-4 h-4 text-blue-600 mt-0.5" />
+              <div className="text-sm text-blue-800">
+                <p className="font-medium mb-1">评分说明</p>
+                <p className="text-blue-600">
+                  点击"开始评分"后，系统将在后台进行评估。您可以继续浏览其他页面，
+                  评估完成后可在"历史记录"中查看详细结果。
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+        <CardFooter className="flex flex-col gap-3">
+          <Button
+            onClick={onStartEvaluation}
+            disabled={pendingCount === 0}
+            className="w-full bg-[#E31837] hover:bg-[#C4142D] h-11"
+          >
+            <Sparkles className="w-4 h-4 mr-2" />
+            开始评分
+          </Button>
+          <div className="flex gap-2 w-full">
+            <Button
+              variant="outline"
+              onClick={onViewHistory}
+              className="flex-1"
+            >
+              <History className="w-4 h-4 mr-2" />
+              查看历史记录
+            </Button>
+          </div>
+        </CardFooter>
+      </Card>
     </div>
   );
 }

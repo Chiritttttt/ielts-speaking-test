@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { db } from '@/lib/db';
 
 // 启动后台评估 - 立即返回，评估在后台进行
@@ -73,13 +74,27 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 启动后台评估（fire and forget）
-    // 在 Next.js 中，我们使用一个技巧：发起一个内部请求但不等待
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
-    
-    // 使用 Promise 但不等待 - 这会在后台继续执行
-    runBackgroundEvaluation(sessionId, transcriptions, baseUrl).catch(error => {
-      console.error('[EvaluateStart] Background evaluation failed:', error);
+    // 使用 Next.js 15 的 after API 确保后台任务在响应发送后执行
+    // 这确保了 API 立即返回，评估真正在后台运行
+    after(async () => {
+      console.log('[EvaluateStart] Starting background evaluation after response');
+      try {
+        await runBackgroundEvaluation(sessionId, transcriptions);
+      } catch (error) {
+        console.error('[EvaluateStart] Background evaluation failed:', error);
+        // 更新失败状态
+        try {
+          await db.testSession.update({
+            where: { id: sessionId },
+            data: {
+              evaluationStatus: 'failed',
+              evaluationMessage: '评估失败: ' + (error instanceof Error ? error.message : '未知错误')
+            }
+          });
+        } catch (e) {
+          console.error('[EvaluateStart] Failed to update error status:', e);
+        }
+      }
     });
 
     return NextResponse.json({
@@ -97,7 +112,7 @@ export async function POST(request: NextRequest) {
 }
 
 // 后台评估函数
-async function runBackgroundEvaluation(sessionId: string, transcriptions: any[], baseUrl: string) {
+async function runBackgroundEvaluation(sessionId: string, transcriptions: any[]) {
   const { callDeepSeek, getEvaluationPrompt } = await import('@/lib/deepseek');
   
   console.log('[BackgroundEval] Starting background evaluation for session:', sessionId);
