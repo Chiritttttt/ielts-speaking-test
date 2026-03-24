@@ -28,6 +28,8 @@ export async function GET(request: NextRequest) {
         username: true,
         name: true,
         level: true,
+        role: true,
+        status: true,
         createdAt: true
       }
     });

@@ -5,13 +5,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, UserPlus, User, Lock } from 'lucide-react';
+import { Loader2, UserPlus, User, Lock, Ticket } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface RegisterDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess: (user: { id: string; username: string; name?: string }) => void;
+  onSuccess: (user: { id: string; username: string; name?: string; role?: string; status?: string }) => void;
   onSwitchToLogin: () => void;
 }
 
@@ -20,6 +20,7 @@ export function RegisterDialog({ open, onOpenChange, onSuccess, onSwitchToLogin 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -45,6 +46,11 @@ export function RegisterDialog({ open, onOpenChange, onSuccess, onSwitchToLogin 
       return;
     }
 
+    if (!inviteCode.trim()) {
+      toast.error('请输入邀请码');
+      return;
+    }
+
     setIsLoading(true);
     try {
       const response = await fetch('/api/auth/register', {
@@ -53,20 +59,28 @@ export function RegisterDialog({ open, onOpenChange, onSuccess, onSwitchToLogin 
         body: JSON.stringify({ 
           username: username.trim(), 
           password,
-          name: name.trim() || undefined
+          name: name.trim() || undefined,
+          inviteCode: inviteCode.trim()
         })
       });
 
       const data = await response.json();
 
       if (data.success) {
-        toast.success('注册成功');
+        if (data.isAdmin) {
+          toast.success('管理员账号创建成功！');
+        } else if (data.needApproval) {
+          toast.success('注册成功，请等待管理员审批');
+        } else {
+          toast.success('注册成功！');
+        }
         onSuccess(data.user);
         onOpenChange(false);
         setUsername('');
         setPassword('');
         setConfirmPassword('');
         setName('');
+        setInviteCode('');
       } else {
         toast.error(data.error || '注册失败');
       }
@@ -85,11 +99,27 @@ export function RegisterDialog({ open, onOpenChange, onSuccess, onSwitchToLogin 
             注册新账号
           </DialogTitle>
           <DialogDescription>
-            创建账号以保存您的练习记录和进度
+            需要邀请码才能注册，注册后需等待管理员审批
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <Label htmlFor="register-invite-code">邀请码 *</Label>
+            <div className="relative mt-1">
+              <Ticket className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                id="register-invite-code"
+                type="text"
+                placeholder="请输入邀请码"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                className="pl-10 uppercase"
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+
           <div>
             <Label htmlFor="register-username">用户名 *</Label>
             <div className="relative mt-1">
