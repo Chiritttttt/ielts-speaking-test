@@ -978,10 +978,10 @@ function HomeView({ onStartTest, onViewHistory }: {
         <h2 className="text-xs font-semibold text-[#666666] mb-4 uppercase tracking-wider">选择测试模式</h2>
         <div className="grid grid-cols-2 gap-4">
           {[
-            { mode: 'part1' as const, label: 'Part 1', desc: '简介与面试 · 4-5 分钟' },
-            { mode: 'part2' as const, label: 'Part 2', desc: '个人陈述 · 3-4 分钟' },
-            { mode: 'part3' as const, label: 'Part 3', desc: '双向讨论 · 4-5 分钟' },
-            { mode: 'full' as const, label: '完整测试', desc: '完整测试 · 11-14 分钟', isFull: true },
+            { mode: 'part1' as const, label: 'Part 1', desc: '简介与面试 · 4题 · 4-5 分钟' },
+            { mode: 'part2' as const, label: 'Part 2', desc: '个人陈述 · 1题 · 3-4 分钟' },
+            { mode: 'part3' as const, label: 'Part 3', desc: '双向讨论 · 4题 · 4-5 分钟' },
+            { mode: 'full' as const, label: '模拟测试', desc: '完整模拟 · 9题 · 11-14 分钟', isFull: true },
           ].map((item) => (
             <button
               key={item.mode}
@@ -1144,6 +1144,11 @@ function TestView({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const prevQuestionIdRef = useRef<string | null>(null);
 
+  // Part 2 准备时间倒计时
+  const [isPreparing, setIsPreparing] = useState(false);
+  const [preparationTime, setPreparationTime] = useState(60); // 60秒准备时间
+  const preparationTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // 播放题目音频
   const playQuestionAudio = useCallback(async () => {
     if (!currentQuestion?.questionText) {
@@ -1241,24 +1246,70 @@ function TestView({
     }
   }, []);
 
+  // 开始 Part 2 准备时间
+  const startPreparation = useCallback(() => {
+    setIsPreparing(true);
+    setPreparationTime(60);
+
+    preparationTimerRef.current = setInterval(() => {
+      setPreparationTime(prev => {
+        if (prev <= 1) {
+          // 准备时间结束，自动开始录音
+          if (preparationTimerRef.current) {
+            clearInterval(preparationTimerRef.current);
+          }
+          setIsPreparing(false);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  // 跳过准备时间
+  const skipPreparation = useCallback(() => {
+    if (preparationTimerRef.current) {
+      clearInterval(preparationTimerRef.current);
+    }
+    setIsPreparing(false);
+  }, []);
+
   // 题目变化时自动播放音频
   useEffect(() => {
     if (currentQuestion && currentQuestion.id !== prevQuestionIdRef.current) {
       prevQuestionIdRef.current = currentQuestion.id;
-      
+
       // 每次新题目都重置为隐藏状态
       setShowQuestion(false);
-      
-      // 检查当前题目是否已被回答
-      // 通过 pendingCount 判断：如果 pendingCount > currentQuestionIndex，说明当前题目已回答
-      setCurrentQuestionRecorded(pendingCount > currentQuestionIndex);
-      
-      // 自动播放音频
-      if (settings.autoPlayQuestion) {
-        const timer = setTimeout(() => {
-          playQuestionAudio();
-        }, 300);
-        return () => clearTimeout(timer);
+
+      // Part 2 第一题：启动准备时间
+      if (currentPart === 2 && currentQuestionIndex === 0 && !currentQuestionRecorded) {
+        setIsPreparing(true);
+        setPreparationTime(60);
+
+        preparationTimerRef.current = setInterval(() => {
+          setPreparationTime(prev => {
+            if (prev <= 1) {
+              if (preparationTimerRef.current) {
+                clearInterval(preparationTimerRef.current);
+              }
+              setIsPreparing(false);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      } else {
+        // 检查当前题目是否已被回答
+        setCurrentQuestionRecorded(pendingCount > currentQuestionIndex);
+
+        // 自动播放音频
+        if (settings.autoPlayQuestion) {
+          const timer = setTimeout(() => {
+            playQuestionAudio();
+          }, 300);
+          return () => clearTimeout(timer);
+        }
       }
     }
     
@@ -1272,15 +1323,58 @@ function TestView({
     setCurrentQuestionRecorded(pendingCount > currentQuestionIndex);
   }, [pendingCount, currentQuestionIndex]);
 
-  // 组件卸载时清理音频
+  // 组件卸载时清理音频和准备计时器
   useEffect(() => {
     return () => {
       if (audioRef.current) {
         audioRef.current.pause();
         URL.revokeObjectURL(audioRef.current.src);
       }
+      if (preparationTimerRef.current) {
+        clearInterval(preparationTimerRef.current);
+      }
     };
   }, []);
+
+  // Part 2 准备时间倒计时 UI
+  if (isPreparing && currentPart === 2) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="flex items-center gap-4">
+          <Badge variant="outline">Part 2</Badge>
+          <Progress value={0} className="flex-1" />
+          <span className="text-sm text-slate-500">准备时间</span>
+        </div>
+
+        <Card className="border-amber-200 bg-amber-50">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl text-amber-700">准备时间</CardTitle>
+            <CardDescription className="text-amber-600">
+              请阅读题目并准备您的回答
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-center py-8">
+            <div className="text-7xl font-bold text-amber-600 mb-4">
+              {preparationTime}
+            </div>
+            <p className="text-sm text-amber-600 mb-6">秒</p>
+
+            {/* 显示题目 */}
+            <div className="bg-white rounded-lg p-4 mb-6 text-left border border-amber-200">
+              <p className="text-slate-700 whitespace-pre-line">{currentQuestion?.questionText}</p>
+            </div>
+
+            <Button
+              onClick={skipPreparation}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              跳过准备，开始录音
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (!currentQuestion) {
     return (
