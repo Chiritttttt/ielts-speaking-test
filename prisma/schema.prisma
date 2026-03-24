@@ -55,6 +55,7 @@ model InviteCode {
 model TestSession {
   id               String            @id @default(cuid())
   userId           String?
+  guestId          String?           // 访客 ID，用于追踪访客测试次数
   testType         String            @default("full")
   status           String            @default("in_progress")
   evaluationStatus String            @default("pending") // pending, evaluating, completed, failed
@@ -72,6 +73,8 @@ model TestSession {
   updatedAt        DateTime          @updatedAt
   responses        SpeakingResponse[]
   user             User?             @relation(fields: [userId], references: [id])
+
+  @@index([guestId]) // 为 guestId 添加索引，提高查询效率
 }
 
 model SpeakingResponse {
