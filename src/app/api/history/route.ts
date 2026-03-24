@@ -37,9 +37,13 @@ export async function GET(request: NextRequest) {
         id: s.id,
         testType: s.testType,
         status: s.status,
+        evaluationStatus: s.evaluationStatus || 'pending',
+        evaluationProgress: s.evaluationProgress || 0,
+        evaluationMessage: s.evaluationMessage,
         bandScore: s.bandScore,
         startedAt: s.startedAt.toISOString(),
         completedAt: s.completedAt?.toISOString(),
+        evaluatedAt: s.evaluatedAt?.toISOString(),
         responses: s.responses,
         createdAt: s.createdAt?.toISOString()
       }))

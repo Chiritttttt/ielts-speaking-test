@@ -3271,6 +3271,48 @@ function HistoryView({ sessions, onBack, onRefresh }: {
   const [playingExample, setPlayingExample] = useState<string | null>(null);
   const exampleAudioRef = useRef<HTMLAudioElement | null>(null);
   const modelAudioRef = useRef<HTMLAudioElement | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const [evaluatingSessions, setEvaluatingSessions] = useState<Set<string>>(new Set());
+
+  // 检查是否有正在评估的会话，启动轮询
+  useEffect(() => {
+    const evaluatingIds = sessions
+      .filter(s => s.evaluationStatus === 'evaluating')
+      .map(s => s.id);
+
+    if (evaluatingIds.length > 0) {
+      setEvaluatingSessions(new Set(evaluatingIds));
+
+      // 每3秒轮询一次评估状态
+      pollingRef.current = setInterval(async () => {
+        for (const sessionId of evaluatingIds) {
+          try {
+            const response = await fetch(`/api/evaluate/status?sessionId=${sessionId}`);
+            const data = await response.json();
+            if (data.success && data.session.evaluationStatus !== 'evaluating') {
+              // 评估完成或失败，刷新列表
+              onRefresh();
+              setEvaluatingSessions(prev => {
+                const next = new Set(prev);
+                next.delete(sessionId);
+                return next;
+              });
+            }
+          } catch (e) {
+            console.error('Poll evaluation status error:', e);
+          }
+        }
+      }, 3000);
+    } else {
+      setEvaluatingSessions(new Set());
+    }
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, [sessions, onRefresh]);
 
   const toggleSelect = (id: string) => {
     const newSelected = new Set(selectedSessions);
@@ -3717,8 +3759,8 @@ function HistoryView({ sessions, onBack, onRefresh }: {
 
           <div className="space-y-3">
             {sessions.map((session) => (
-              <Card 
-                key={session.id} 
+              <Card
+                key={session.id}
                 className={`hover:shadow-md transition-shadow cursor-pointer ${selectedSessions.has(session.id) ? 'ring-2 ring-blue-500' : ''}`}
                 onClick={() => viewSessionDetails(session.id)}
               >
@@ -3732,7 +3774,26 @@ function HistoryView({ sessions, onBack, onRefresh }: {
                       className="w-4 h-4"
                     />
                     <div className="flex-1">
-                      <p className="font-semibold">{session.testType === 'full' ? '模拟测试' : `Part ${session.testType.replace('part', '')} 练习`}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold">{session.testType === 'full' ? '模拟测试' : `Part ${session.testType.replace('part', '')} 练习`}</p>
+                        {/* 评估状态徽章 */}
+                        {session.evaluationStatus === 'evaluating' && (
+                          <Badge className="bg-blue-100 text-blue-700 border-blue-200 animate-pulse">
+                            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            评估中 {session.evaluationProgress || 0}%
+                          </Badge>
+                        )}
+                        {session.evaluationStatus === 'pending' && (
+                          <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">
+                            等待评估
+                          </Badge>
+                        )}
+                        {session.evaluationStatus === 'failed' && (
+                          <Badge className="bg-red-100 text-red-700 border-red-200">
+                            评估失败
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-sm text-slate-500">{new Date(session.startedAt).toLocaleString('zh-CN')}</p>
                     </div>
                     {session.bandScore && (
