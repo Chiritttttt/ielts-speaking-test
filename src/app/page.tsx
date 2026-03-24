@@ -319,17 +319,30 @@ export default function IELTSSpeakingApp() {
   // Create session
   const createSession = async () => {
     try {
-      const currentUserId = user.userId || `guest_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-      
       const response = await fetch('/api/test-session', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ testType: testMode, userId: currentUserId })
+        body: JSON.stringify({ testType: testMode })
       });
       const data = await response.json();
+      
       if (data.success) {
         setSessionId(data.session.id);
+        // 如果是访客，显示剩余次数提示
+        if (data.isGuest && data.remainingGuestSessions === 0) {
+          toast.info('这是您最后一次访客体验机会，注册后可无限使用');
+        }
         return data.session.id;
+      } else {
+        // 处理错误情况
+        if (data.needRegister) {
+          toast.error('访客试用次数已用完，请注册账号后继续使用');
+          setShowRegisterDialog(true);
+        } else if (data.needApproval) {
+          toast.error(data.error || '账号正在等待审批');
+        } else {
+          toast.error(data.error || '创建会话失败');
+        }
       }
     } catch (error) {
       toast.error('创建会话失败');
@@ -402,7 +415,13 @@ export default function IELTSSpeakingApp() {
     // 清理未完成的会话
     await cleanupIncompleteSessions();
     
-    await createSession();
+    // 创建会话 - 如果失败则停止
+    const sessionId = await createSession();
+    if (!sessionId) {
+      setPendingTestMode(null);
+      return;
+    }
+    
     const part = mode === 'full' ? 1 : parseInt(mode.replace('part', ''));
     
     let topic = null;
@@ -430,7 +449,13 @@ export default function IELTSSpeakingApp() {
     // 清理未完成的会话
     await cleanupIncompleteSessions();
     
-    await createSession();
+    // 创建会话 - 如果失败则停止
+    const sessionId = await createSession();
+    if (!sessionId) {
+      setPendingTestMode(null);
+      return;
+    }
+    
     const part = mode === 'full' ? 1 : parseInt(mode.replace('part', ''));
     
     await fetchQuestions(part, null, true);

@@ -14,6 +14,8 @@ export interface UserInfo {
   username?: string;
   name?: string;
   level?: string;
+  role?: string;
+  status?: string; // pending, approved, rejected, suspended
   isLoggedIn: boolean;
   createdAt: string;
 }
