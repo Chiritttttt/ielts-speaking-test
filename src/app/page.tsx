@@ -553,80 +553,44 @@ export default function IELTSSpeakingApp() {
     }
 
     const total = allTranscriptions.length;
-    setEvaluatingProgress({ current: 0, total, message: '准备评估...' });
+    setEvaluatingProgress({ current: 0, total, message: '启动后台评估...' });
 
     try {
-      const results = [];
-      for (let i = 0; i < allTranscriptions.length; i++) {
-        const t = allTranscriptions[i];
-        setEvaluatingProgress({ 
-          current: i + 1, 
-          total, 
-          message: `正在评估第 ${i + 1}/${total} 个回答...` 
-        });
-
-        const response = await fetch('/api/evaluate-batch', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            sessionId,
-            partNumber: 0,
-            transcriptions: [t]
-          })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success && data.responses?.length > 0) {
-          results.push(data.responses[0]);
-          
-          const responseData: ResponseData = {
-            partNumber: data.responses[0].partNumber || t.partNumber,
-            questionText: data.responses[0].questionText,
-            transcription: data.responses[0].transcription,
-            audioBase64: data.responses[0].audioBase64,
-            duration: data.responses[0].duration,
-            scores: data.responses[0].scores,
-            feedback: data.responses[0].feedback,
-            improvements: data.responses[0].improvements,
-            modelAnswer: data.responses[0].modelAnswer
-          };
-          addResponse(responseData);
-        }
-      }
-
-      clearPendingTranscriptions();
-      
-      // 计算平均分
-      const avgScores = {
-        fluencyCoherence: results.reduce((sum: number, r: any) => sum + (r.scores?.fluencyCoherence || 6), 0) / results.length,
-        lexicalResource: results.reduce((sum: number, r: any) => sum + (r.scores?.lexicalResource || 6), 0) / results.length,
-        grammaticalRange: results.reduce((sum: number, r: any) => sum + (r.scores?.grammaticalRange || 6), 0) / results.length,
-        pronunciation: results.reduce((sum: number, r: any) => sum + (r.scores?.pronunciation || 6), 0) / results.length,
-        overall: 0
-      };
-      avgScores.overall = (avgScores.fluencyCoherence + avgScores.lexicalResource + avgScores.grammaticalRange + avgScores.pronunciation) / 4;
-
-      setCurrentEvaluation({
-        partNumber: 0,
-        averageScores: avgScores,
-        partBandScore: avgScores.overall,
-        responses: results
+      // 调用后台评估 API - 立即返回，评估在后台进行
+      const response = await fetch('/api/evaluate/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          transcriptions: allTranscriptions
+        })
       });
-
-      setEvaluatingProgress({ current: total, total, message: '评估完成！' });
-      toast.success('完整测试评估完成！');
       
-      setTimeout(() => {
+      const data = await response.json();
+      
+      if (data.success) {
+        toast.success('评估已在后台启动，请稍后在历史记录查看结果');
+        clearPendingTranscriptions();
+        setEvaluatingProgress({ current: total, total, message: '评估已在后台启动' });
+        
+        // 2秒后清除进度提示并跳转到历史记录
+        setTimeout(() => {
+          setEvaluatingProgress(null);
+          setIsLoading(false);
+          fetchHistory();
+          setView('history');
+        }, 2000);
+      } else {
+        toast.error(data.error || '启动评估失败');
         setEvaluatingProgress(null);
-        setView('result');
-      }, 500);
+        setIsLoading(false);
+      }
     } catch (error) {
-      console.error('Evaluation error:', error);
-      toast.error('评估服务出错');
+      console.error('Start evaluation error:', error);
+      toast.error('启动评估失败');
       setEvaluatingProgress(null);
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const fetchHistory = async () => {

@@ -34,21 +34,25 @@ model UserSettings {
 }
 
 model TestSession {
-  id              String            @id @default(cuid())
-  userId          String?
-  testType        String            @default("full")
-  status          String            @default("in_progress")
-  totalScore      Float?
-  bandScore       Float?
-  part1Intro      String?
-  part2Intro      String?
-  part3Intro      String?
-  startedAt       DateTime          @default(now())
-  completedAt     DateTime?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  responses       SpeakingResponse[]
-  user            User?             @relation(fields: [userId], references: [id])
+  id               String            @id @default(cuid())
+  userId           String?
+  testType         String            @default("full")
+  status           String            @default("in_progress")
+  evaluationStatus String            @default("pending") // pending, evaluating, completed, failed
+  totalScore       Float?
+  bandScore        Float?
+  part1Intro       String?
+  part2Intro       String?
+  part3Intro       String?
+  evaluationProgress Int             @default(0) // 评估进度 0-100
+  evaluationMessage String?          // 评估进度消息
+  startedAt        DateTime          @default(now())
+  completedAt      DateTime?
+  evaluatedAt      DateTime?         // 评估完成时间
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  responses        SpeakingResponse[]
+  user             User?             @relation(fields: [userId], references: [id])
 }
 
 model SpeakingResponse {
