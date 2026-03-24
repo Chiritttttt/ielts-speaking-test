@@ -977,26 +977,24 @@ export default function IELTSSpeakingApp() {
         </div>
       )}
 
-      {/* Evaluation progress indicator */}
+      {/* Evaluation progress indicator - 非阻塞的右上角提示 */}
       {evaluatingProgress && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="bg-white rounded-xl p-6 shadow-xl max-w-sm w-full mx-4">
-            <div className="text-center">
-              <Loader2 className="w-10 h-10 animate-spin text-[#E31837] mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-[#222222] mb-2">正在评估</h3>
-              <p className="text-sm text-[#666666] mb-4">{evaluatingProgress.message}</p>
-              
-              {/* Progress bar */}
-              <div className="w-full bg-slate-200 rounded-full h-3 mb-2">
-                <div 
-                  className="bg-[#E31837] h-3 rounded-full transition-all duration-300"
-                  style={{ width: `${(evaluatingProgress.current / evaluatingProgress.total) * 100}%` }}
-                />
-              </div>
-              <p className="text-xs text-slate-500">
-                {evaluatingProgress.current} / {evaluatingProgress.total}
-              </p>
+        <div className="fixed top-16 right-4 z-50">
+          <div className="bg-white rounded-lg shadow-lg border border-slate-200 p-3 max-w-xs">
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-[#E31837]" />
+              <span className="text-sm font-medium text-slate-700">后台评估中</span>
             </div>
+            <p className="text-xs text-slate-500 mt-1">{evaluatingProgress.message}</p>
+            <div className="w-full bg-slate-200 rounded-full h-1.5 mt-2">
+              <div 
+                className="bg-[#E31837] h-1.5 rounded-full transition-all duration-300"
+                style={{ width: `${(evaluatingProgress.current / evaluatingProgress.total) * 100}%` }}
+              />
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              可浏览其他页面，完成后在历史记录查看
+            </p>
           </div>
         </div>
       )}
