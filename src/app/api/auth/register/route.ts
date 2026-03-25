@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 创建用户（状态为 pending，需要管理员审批）
+    // 创建用户（邀请码注册直接通过，无需审批）
     const hashedPassword = await hashPassword(password);
     const user = await db.user.create({
       data: {
@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
         name: name || username,
         level: 'intermediate',
         role: 'user',
-        status: 'pending', // 等待管理员审批
+        status: 'approved', // 邀请码注册直接通过
         invitedBy: code.createdById
       }
     });
@@ -171,8 +171,7 @@ export async function POST(request: NextRequest) {
     const token = generateToken(user.id);
     const response = NextResponse.json({
       success: true,
-      needApproval: true,
-      message: '注册成功，请等待管理员审批后使用',
+      message: '注册成功，欢迎使用雅思口语练习平台',
       user: {
         id: user.id,
         username: user.username,

@@ -69,8 +69,6 @@ export function RegisterDialog({ open, onOpenChange, onSuccess, onSwitchToLogin 
       if (data.success) {
         if (data.isAdmin) {
           toast.success('管理员账号创建成功！');
-        } else if (data.needApproval) {
-          toast.success('注册成功，请等待管理员审批');
         } else {
           toast.success('注册成功！');
         }
@@ -99,7 +97,7 @@ export function RegisterDialog({ open, onOpenChange, onSuccess, onSwitchToLogin 
             注册新账号
           </DialogTitle>
           <DialogDescription>
-            需要邀请码才能注册，注册后需等待管理员审批
+            需要邀请码才能注册
           </DialogDescription>
         </DialogHeader>
 
