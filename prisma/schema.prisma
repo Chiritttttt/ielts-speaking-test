@@ -120,8 +120,33 @@ model QuestionBank {
   followUpQuestions String?
   difficulty   String   @default("medium")
   isActive     Boolean  @default(true)
+  poolId       String?  // 所属题库 ID
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  pool         QuestionPool? @relation(fields: [poolId], references: [id], onDelete: SetNull)
+
+  @@index([poolId, partNumber, category])
+  @@index([isActive, poolId])
+}
+
+// 题库（如：2024年1-4月题库、2024年5-8月题库）
+model QuestionPool {
+  id          String   @id @default(cuid())
+  name        String                    // 题库名称，如 "2024年1-4月题库"
+  description String?                   // 题库描述
+  period      String?                   // 题库周期，如 "2024-Q1", "2024-Q2"
+  isActive    Boolean  @default(true)   // 是否启用
+  isDefault   Boolean  @default(false)  // 是否为默认题库
+  source      String   @default("ai")   // 来源: ai(自动生成), import(手动导入), official(官方)
+  part1Count  Int      @default(0)      // Part 1 题目数量
+  part2Count  Int      @default(0)      // Part 2 题目数量
+  part3Count  Int      @default(0)      // Part 3 题目数量
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  questions   QuestionBank[]
+
+  @@index([isActive, isDefault])
+  @@index([period])
 }
 
 // 公告管理

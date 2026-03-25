@@ -14,10 +14,22 @@ export async function GET(request: NextRequest) {
     const part = searchParams.get('part');
     const category = searchParams.get('category');
     const count = parseInt(searchParams.get('count') || '5');
+    const poolId = searchParams.get('poolId');
 
     const whereClause: any = { isActive: true };
     if (part) whereClause.partNumber = parseInt(part);
     if (category) whereClause.category = category;
+    if (poolId) {
+      whereClause.poolId = poolId;
+    } else {
+      // 如果没有指定题库，获取默认题库
+      const defaultPool = await db.questionPool.findFirst({
+        where: { isActive: true, isDefault: true }
+      });
+      if (defaultPool) {
+        whereClause.poolId = defaultPool.id;
+      }
+    }
 
     // 获取题目
     const questions = await db.questionBank.findMany({

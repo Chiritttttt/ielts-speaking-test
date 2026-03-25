@@ -259,8 +259,35 @@ export default function IELTSSpeakingApp() {
   const [customTopic, setCustomTopic] = useState('');
   const [useCustomTopic, setUseCustomTopic] = useState(false);
 
+  // 题库相关状态
+  const [questionPools, setQuestionPools] = useState<any[]>([]);
+  const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
+
+  // 获取题库列表
+  useEffect(() => {
+    const fetchPools = async () => {
+      try {
+        const response = await fetch('/api/pool?includeCount=true');
+        const data = await response.json();
+        if (data.success) {
+          setQuestionPools(data.pools);
+          // 自动选择默认题库
+          const defaultPool = data.pools.find((p: any) => p.isDefault);
+          if (defaultPool) {
+            setSelectedPoolId(defaultPool.id);
+          } else if (data.pools.length > 0) {
+            setSelectedPoolId(data.pools[0].id);
+          }
+        }
+      } catch (error) {
+        console.error('[Pools] Fetch error:', error);
+      }
+    };
+    fetchPools();
+  }, []);
+
   // Fetch questions
-  const fetchQuestions = useCallback(async (part: number, topic?: string | null, autoGenerate: boolean = true) => {
+  const fetchQuestions = useCallback(async (part: number, topic?: string | null, autoGenerate: boolean = true, poolId?: string | null) => {
     setIsLoading(true);
     try {
       const selectedTopic = topic || TOPICS[`part${part}` as keyof typeof TOPICS]?.[Math.floor(Math.random() * (TOPICS[`part${part}` as keyof typeof TOPICS]?.length || 0))];
@@ -269,6 +296,7 @@ export default function IELTSSpeakingApp() {
       const questionCounts: Record<number, number> = { 1: 10, 2: 1, 3: 8 };
       let url = `/api/questions?part=${part}&count=${questionCounts[part] || 4}`;
       if (selectedTopic) url += `&category=${encodeURIComponent(selectedTopic)}`;
+      if (poolId) url += `&poolId=${poolId}`;
 
       const response = await fetch(url);
       const data = await response.json();
@@ -446,7 +474,7 @@ export default function IELTSSpeakingApp() {
         : selectedPartTopics[`part${part}` as keyof typeof selectedPartTopics];
     }
     
-    await fetchQuestions(part, topic, true);
+    await fetchQuestions(part, topic, true, selectedPoolId);
     
     setView('test');
     setPendingTestMode(null);
@@ -471,7 +499,7 @@ export default function IELTSSpeakingApp() {
     
     const part = mode === 'full' ? 1 : parseInt(mode.replace('part', ''));
     
-    await fetchQuestions(part, null, true);
+    await fetchQuestions(part, null, true, selectedPoolId);
     
     setView('test');
     setPendingTestMode(null);
@@ -1402,11 +1430,41 @@ export default function IELTSSpeakingApp() {
               选择练习话题
             </DialogTitle>
             <DialogDescription>
-              选择您想要练习的话题，或者输入自定义话题
+              选择题库和话题开始练习
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
+            {/* 题库选择 */}
+            {questionPools.length > 0 && (
+              <div>
+                <Label className="text-sm font-medium text-slate-700 mb-2 block">选择题库</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {questionPools.map((pool) => (
+                    <button
+                      key={pool.id}
+                      onClick={() => setSelectedPoolId(pool.id)}
+                      className={`p-3 rounded-lg border text-left transition-all ${
+                        selectedPoolId === pool.id 
+                          ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500' 
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-sm">{pool.name}</span>
+                        {pool.isDefault && (
+                          <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-600 border-indigo-200">默认</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Part 1: {pool.part1Count || 0} | Part 2: {pool.part2Count || 0} | Part 3: {pool.part3Count || 0}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Topic mode selection */}
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2 cursor-pointer">
