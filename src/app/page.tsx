@@ -5059,7 +5059,7 @@ function SettingsView({ settings, updateSetting, user }: {
 }
 
 // Admin View - 综合管理后台
-type AdminTabType = 'announcements' | 'invites' | 'users';
+type AdminTabType = 'announcements' | 'invites' | 'users' | 'questions';
 
 function AdminView({ onBack }: { onBack: () => void }) {
   const [activeTab, setActiveTab] = useState<AdminTabType>('announcements');
@@ -5091,11 +5091,25 @@ function AdminView({ onBack }: { onBack: () => void }) {
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [showUserDialog, setShowUserDialog] = useState(false);
 
+  // ===== 题库管理状态 =====
+  const [questionPools, setQuestionPools] = useState<any[]>([]);
+  const [poolLoading, setPoolLoading] = useState(false);
+  const [showPoolCreateDialog, setShowPoolCreateDialog] = useState(false);
+  const [newPoolName, setNewPoolName] = useState('');
+  const [newPoolDescription, setNewPoolDescription] = useState('');
+  const [selectedPoolForGenerate, setSelectedPoolForGenerate] = useState<any | null>(null);
+  const [showGenerateDialog, setShowGenerateDialog] = useState(false);
+  const [generatePart, setGeneratePart] = useState(1);
+  const [generateTopic, setGenerateTopic] = useState('');
+  const [generateCount, setGenerateCount] = useState(5);
+  const [generating, setGenerating] = useState(false);
+
   // ===== 初始化加载 =====
   useEffect(() => {
     fetchAnnouncements();
     loadInviteCodes();
     loadUsers(userFilter);
+    loadQuestionPools();
   }, []);
 
   // ===== 公告管理函数 =====
@@ -5355,6 +5369,125 @@ function AdminView({ onBack }: { onBack: () => void }) {
     }
   };
 
+  // ===== 题库管理函数 =====
+  const loadQuestionPools = async () => {
+    setPoolLoading(true);
+    try {
+      const response = await fetch('/api/pool?includeCount=true');
+      const data = await response.json();
+      if (data.success) {
+        setQuestionPools(data.pools);
+      }
+    } catch (error) {
+      console.error('Load question pools error:', error);
+    }
+    setPoolLoading(false);
+  };
+
+  const createQuestionPool = async () => {
+    if (!newPoolName.trim()) {
+      toast.error('请输入题库名称');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/pool', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: newPoolName.trim(),
+          description: newPoolDescription.trim(),
+          isDefault: questionPools.length === 0 // 第一个题库自动设为默认
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('题库创建成功');
+        setNewPoolName('');
+        setNewPoolDescription('');
+        setShowPoolCreateDialog(false);
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '创建失败');
+      }
+    } catch (error) {
+      toast.error('创建失败');
+    }
+  };
+
+  const setDefaultPool = async (poolId: string) => {
+    try {
+      const response = await fetch('/api/pool', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: poolId, isDefault: true })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('已设为默认题库');
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '操作失败');
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    }
+  };
+
+  const deletePool = async (poolId: string) => {
+    if (!confirm('确定删除此题库？题库中的所有题目也会被删除！')) return;
+
+    try {
+      const response = await fetch(`/api/pool?id=${poolId}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('题库已删除');
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '删除失败');
+      }
+    } catch (error) {
+      toast.error('删除失败');
+    }
+  };
+
+  const generateQuestionsForPool = async () => {
+    if (!selectedPoolForGenerate) return;
+    if (!generateTopic.trim()) {
+      toast.error('请输入话题');
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      const response = await fetch('/api/pool/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          poolId: selectedPoolForGenerate.id,
+          partNumber: generatePart,
+          topic: generateTopic.trim(),
+          count: generateCount
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`成功生成 ${data.generated} 道题目`);
+        setGenerateTopic('');
+        setShowGenerateDialog(false);
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '生成失败');
+      }
+    } catch (error) {
+      toast.error('生成失败');
+    }
+    setGenerating(false);
+  };
+
   // ===== 格式化函数 =====
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return '-';
@@ -5435,6 +5568,15 @@ function AdminView({ onBack }: { onBack: () => void }) {
         >
           <Users className="w-4 h-4" />
           用户审批
+        </button>
+        <button
+          onClick={() => setActiveTab('questions')}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+            activeTab === 'questions' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          题库管理
         </button>
       </div>
 
@@ -5932,6 +6074,216 @@ function AdminView({ onBack }: { onBack: () => void }) {
                   </div>
                 </div>
               )}
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
+
+      {/* ===== 题库管理 Tab ===== */}
+      {activeTab === 'questions' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">题库管理</h3>
+              <p className="text-sm text-slate-500">创建和管理雅思口语题库，支持 AI 自动生成题目</p>
+            </div>
+            <Button onClick={() => setShowPoolCreateDialog(true)} className="bg-[#E31837] hover:bg-[#C4142D]">
+              <Plus className="w-4 h-4 mr-2" />
+              创建题库
+            </Button>
+          </div>
+
+          {/* 题库列表 */}
+          {poolLoading ? (
+            <div className="text-center py-8 text-slate-500">
+              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+              加载中...
+            </div>
+          ) : questionPools.length === 0 ? (
+            <Card>
+              <CardContent className="pt-8 pb-8 text-center text-slate-500">
+                <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>暂无题库</p>
+                <p className="text-sm mt-1">点击上方按钮创建第一个题库</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid gap-4">
+              {questionPools.map((pool) => (
+                <Card key={pool.id} className={`${pool.isDefault ? 'border-[#E31837] border-2' : ''}`}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2">
+                          {pool.name}
+                          {pool.isDefault && (
+                            <Badge className="bg-[#E31837]">默认题库</Badge>
+                          )}
+                        </CardTitle>
+                        {pool.description && (
+                          <CardDescription className="mt-1">{pool.description}</CardDescription>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {!pool.isDefault && (
+                          <Button variant="outline" size="sm" onClick={() => setDefaultPool(pool.id)}>
+                            设为默认
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedPoolForGenerate(pool);
+                            setShowGenerateDialog(true);
+                          }}
+                        >
+                          <Sparkles className="w-4 h-4 mr-1" />
+                          生成题目
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-700"
+                          onClick={() => deletePool(pool.id)}
+                          disabled={pool.isDefault && questionPools.length > 1}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-4 gap-4 text-center">
+                      <div className="p-3 bg-blue-50 rounded-lg">
+                        <p className="text-2xl font-bold text-blue-600">{pool.part1Count || 0}</p>
+                        <p className="text-xs text-slate-500">Part 1</p>
+                      </div>
+                      <div className="p-3 bg-green-50 rounded-lg">
+                        <p className="text-2xl font-bold text-green-600">{pool.part2Count || 0}</p>
+                        <p className="text-xs text-slate-500">Part 2</p>
+                      </div>
+                      <div className="p-3 bg-purple-50 rounded-lg">
+                        <p className="text-2xl font-bold text-purple-600">{pool.part3Count || 0}</p>
+                        <p className="text-xs text-slate-500">Part 3</p>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-lg">
+                        <p className="text-2xl font-bold text-slate-600">{(pool.part1Count || 0) + (pool.part2Count || 0) + (pool.part3Count || 0)}</p>
+                        <p className="text-xs text-slate-500">总计</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {/* 创建题库对话框 */}
+          <Dialog open={showPoolCreateDialog} onOpenChange={setShowPoolCreateDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>创建新题库</DialogTitle>
+                <DialogDescription>
+                  创建一个新的雅思口语题库，例如 "2026年1-4月题库"
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>题库名称 *</Label>
+                  <Input
+                    value={newPoolName}
+                    onChange={(e) => setNewPoolName(e.target.value)}
+                    placeholder="例如：2026年1-4月雅思口语题库"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>描述（可选）</Label>
+                  <textarea
+                    value={newPoolDescription}
+                    onChange={(e) => setNewPoolDescription(e.target.value)}
+                    placeholder="题库描述..."
+                    className="w-full min-h-[80px] p-3 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowPoolCreateDialog(false)}>
+                  取消
+                </Button>
+                <Button onClick={createQuestionPool} className="bg-[#E31837] hover:bg-[#C4142D]">
+                  创建
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* 生成题目对话框 */}
+          <Dialog open={showGenerateDialog} onOpenChange={setShowGenerateDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>AI 生成题目</DialogTitle>
+                <DialogDescription>
+                  为题库 "{selectedPoolForGenerate?.name}" 生成雅思口语题目
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>题目部分</Label>
+                  <div className="flex gap-2">
+                    {[1, 2, 3].map((part) => (
+                      <Button
+                        key={part}
+                        variant={generatePart === part ? 'default' : 'outline'}
+                        onClick={() => setGeneratePart(part)}
+                        className={generatePart === part ? 'bg-[#E31837] hover:bg-[#C4142D]' : ''}
+                      >
+                        Part {part}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>话题</Label>
+                  <Input
+                    value={generateTopic}
+                    onChange={(e) => setGenerateTopic(e.target.value)}
+                    placeholder="例如：Hometown, Work, Study, Travel..."
+                  />
+                  <p className="text-xs text-slate-500">输入雅思口语话题，AI 将根据话题生成相关题目</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>生成数量</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={generateCount}
+                    onChange={(e) => setGenerateCount(parseInt(e.target.value) || 5)}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowGenerateDialog(false)}>
+                  取消
+                </Button>
+                <Button
+                  onClick={generateQuestionsForPool}
+                  disabled={generating}
+                  className="bg-[#E31837] hover:bg-[#C4142D]"
+                >
+                  {generating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      生成中...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      开始生成
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
