@@ -174,15 +174,23 @@ Please evaluate this IELTS Speaking response according to Part ${currentPartNumb
     }), { fluency: 0, vocabulary: 0, grammar: 0, pronunciation: 0, overall: 0 });
 
     const count = results.length;
+    // 确保平均分也是雅思标准分（0.5递增）
+    const roundToHalf = (n: number) => Math.round(n * 2) / 2;
     const averageScores = {
-      fluencyCoherence: totalScores.fluency / count,
-      lexicalResource: totalScores.vocabulary / count,
-      grammaticalRange: totalScores.grammar / count,
-      pronunciation: totalScores.pronunciation / count,
-      overall: totalScores.overall / count
+      fluencyCoherence: roundToHalf(totalScores.fluency / count),
+      lexicalResource: roundToHalf(totalScores.vocabulary / count),
+      grammaticalRange: roundToHalf(totalScores.grammar / count),
+      pronunciation: roundToHalf(totalScores.pronunciation / count),
+      overall: roundToHalf(totalScores.overall / count)
     };
 
-    const partBandScore = averageScores.overall;
+    // 确保总分也是雅思标准分
+    const partBandScore = roundToHalf((
+      averageScores.fluencyCoherence +
+      averageScores.lexicalResource +
+      averageScores.grammaticalRange +
+      averageScores.pronunciation
+    ) / 4);
 
     console.log('[Evaluate] All evaluations complete:', { 
       resultCount: results.length, 

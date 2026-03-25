@@ -7,7 +7,7 @@ import {
   BarChart3, TrendingUp, BookOpen, Award, Clock, Target, Lightbulb,
   Volume2, CheckCircle2, AlertCircle, Loader2, History, User, Star,
   ArrowRight, RefreshCw, Download, Share2, Database, Plus, Sparkles,
-  Eye, Trash2, X, LogOut, Upload, MessageCircle, Shield
+  Eye, Trash2, X, LogOut, Upload, MessageCircle, Shield, Pencil, Languages
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -982,15 +982,18 @@ export default function IELTSSpeakingApp() {
         return;
       }
       
-      // 计算平均分
+      // 雅思标准分数转换函数（0.5递增）
+      const roundToHalf = (n: number) => Math.round(n * 2) / 2;
+      
+      // 计算平均分（确保是雅思标准分）
       const avgScores = {
-        fluencyCoherence: results.reduce((sum: number, r: any) => sum + (r.scores?.fluencyCoherence || 6), 0) / results.length,
-        lexicalResource: results.reduce((sum: number, r: any) => sum + (r.scores?.lexicalResource || 6), 0) / results.length,
-        grammaticalRange: results.reduce((sum: number, r: any) => sum + (r.scores?.grammaticalRange || 6), 0) / results.length,
-        pronunciation: results.reduce((sum: number, r: any) => sum + (r.scores?.pronunciation || 6), 0) / results.length,
+        fluencyCoherence: roundToHalf(results.reduce((sum: number, r: any) => sum + (r.scores?.fluencyCoherence || 6), 0) / results.length),
+        lexicalResource: roundToHalf(results.reduce((sum: number, r: any) => sum + (r.scores?.lexicalResource || 6), 0) / results.length),
+        grammaticalRange: roundToHalf(results.reduce((sum: number, r: any) => sum + (r.scores?.grammaticalRange || 6), 0) / results.length),
+        pronunciation: roundToHalf(results.reduce((sum: number, r: any) => sum + (r.scores?.pronunciation || 6), 0) / results.length),
         overall: 0
       };
-      avgScores.overall = (avgScores.fluencyCoherence + avgScores.lexicalResource + avgScores.grammaticalRange + avgScores.pronunciation) / 4;
+      avgScores.overall = roundToHalf((avgScores.fluencyCoherence + avgScores.lexicalResource + avgScores.grammaticalRange + avgScores.pronunciation) / 4);
 
       const evaluationData = {
         partNumber: currentPart,
@@ -1128,16 +1131,19 @@ export default function IELTSSpeakingApp() {
       }
 
       clearPendingTranscriptions();
-
-      // 计算平均分
+      
+      // 雅思标准分数转换函数（0.5递增）
+      const roundToHalf = (n: number) => Math.round(n * 2) / 2;
+      
+      // 计算平均分（确保是雅思标准分）
       const avgScores = {
-        fluencyCoherence: results.reduce((sum: number, r: any) => sum + (r.scores?.fluencyCoherence || 6), 0) / results.length,
-        lexicalResource: results.reduce((sum: number, r: any) => sum + (r.scores?.lexicalResource || 6), 0) / results.length,
-        grammaticalRange: results.reduce((sum: number, r: any) => sum + (r.scores?.grammaticalRange || 6), 0) / results.length,
-        pronunciation: results.reduce((sum: number, r: any) => sum + (r.scores?.pronunciation || 6), 0) / results.length,
+        fluencyCoherence: roundToHalf(results.reduce((sum: number, r: any) => sum + (r.scores?.fluencyCoherence || 6), 0) / results.length),
+        lexicalResource: roundToHalf(results.reduce((sum: number, r: any) => sum + (r.scores?.lexicalResource || 6), 0) / results.length),
+        grammaticalRange: roundToHalf(results.reduce((sum: number, r: any) => sum + (r.scores?.grammaticalRange || 6), 0) / results.length),
+        pronunciation: roundToHalf(results.reduce((sum: number, r: any) => sum + (r.scores?.pronunciation || 6), 0) / results.length),
         overall: 0
       };
-      avgScores.overall = (avgScores.fluencyCoherence + avgScores.lexicalResource + avgScores.grammaticalRange + avgScores.pronunciation) / 4;
+      avgScores.overall = roundToHalf((avgScores.fluencyCoherence + avgScores.lexicalResource + avgScores.grammaticalRange + avgScores.pronunciation) / 4);
 
       setCurrentEvaluation({
         partNumber: 0,
@@ -2837,7 +2843,76 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
   const [playingExample, setPlayingExample] = useState<string | null>(null);
   const exampleAudioRef = useRef<HTMLAudioElement | null>(null);
   const modelAudioRef = useRef<HTMLAudioElement | null>(null);
-  
+
+  // 语法修改和翻译状态
+  const [grammarFixing, setGrammarFixing] = useState<number | null>(null);
+  const [translating, setTranslating] = useState<{ index: number; type: 'transcription' | 'modelAnswer' } | null>(null);
+  const [grammarResults, setGrammarResults] = useState<Record<number, { corrected: string; errors: any[] }>>({});
+  const [translations, setTranslations] = useState<Record<string, string>>({});
+
+  // 语法修改
+  const fixGrammar = async (index: number, text: string) => {
+    if (grammarResults[index]) {
+      // 已有结果，清除
+      setGrammarResults(prev => {
+        const newResults = { ...prev };
+        delete newResults[index];
+        return newResults;
+      });
+      return;
+    }
+
+    setGrammarFixing(index);
+    try {
+      const response = await fetch('/api/grammar-fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setGrammarResults(prev => ({ ...prev, [index]: data }));
+      } else {
+        toast.error(data.error || '语法修改失败');
+      }
+    } catch (error) {
+      toast.error('语法修改服务出错');
+    }
+    setGrammarFixing(null);
+  };
+
+  // 翻译
+  const translateText = async (index: number, text: string, type: 'transcription' | 'modelAnswer') => {
+    const key = `${index}_${type}`;
+    if (translations[key]) {
+      // 已有翻译，清除
+      setTranslations(prev => {
+        const newTranslations = { ...prev };
+        delete newTranslations[key];
+        return newTranslations;
+      });
+      return;
+    }
+
+    setTranslating({ index, type });
+    try {
+      const response = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, type })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setTranslations(prev => ({ ...prev, [key]: data.translation }));
+      } else {
+        toast.error(data.error || '翻译失败');
+      }
+    } catch (error) {
+      toast.error('翻译服务出错');
+    }
+    setTranslating(null);
+  };
+
   // 调试日志
   useEffect(() => {
     console.log('[ResultView] evaluation object:', evaluation);
@@ -3087,16 +3162,77 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <Label className="text-xs text-slate-500">您的回答</Label>
-                    <AudioPlayer 
-                      audioBase64={response.audioBase64} 
-                      audioId={response.audioId}
-                      duration={response.duration} 
-                      showDownload={true}
-                    />
+                    <div className="flex items-center gap-1">
+                      {/* 语法修改按钮 */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fixGrammar(index, response.transcription)}
+                        disabled={grammarFixing === index}
+                        className="h-7 text-xs gap-1"
+                      >
+                        {grammarFixing === index ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Pencil className="w-3 h-3" />
+                        )}
+                        {grammarResults[index] ? '隐藏修改' : '语法修改'}
+                      </Button>
+                      {/* 翻译按钮 */}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => translateText(index, response.transcription, 'transcription')}
+                        disabled={translating?.index === index && translating?.type === 'transcription'}
+                        className="h-7 text-xs gap-1"
+                      >
+                        {translating?.index === index && translating?.type === 'transcription' ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Languages className="w-3 h-3" />
+                        )}
+                        {translations[`${index}_transcription`] ? '隐藏翻译' : '翻译'}
+                      </Button>
+                      <AudioPlayer 
+                        audioBase64={response.audioBase64} 
+                        audioId={response.audioId}
+                        duration={response.duration} 
+                        showDownload={true}
+                      />
+                    </div>
                   </div>
                   <div className="mt-1 p-3 bg-slate-50 rounded-lg text-sm">
                     {response.transcription || '无转录内容'}
                   </div>
+                  {/* 翻译结果 */}
+                  {translations[`${index}_transcription`] && (
+                    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                      <strong>中文翻译：</strong>{translations[`${index}_transcription`]}
+                    </div>
+                  )}
+                  {/* 语法修改结果 */}
+                  {grammarResults[index] && (
+                    <div className="mt-2 space-y-2">
+                      <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm">
+                        <strong className="text-green-700">修改后：</strong>
+                        <span className="text-green-800">{grammarResults[index].corrected}</span>
+                      </div>
+                      {grammarResults[index].errors.length > 0 && (
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                          <strong className="text-amber-700 text-sm">错误详解：</strong>
+                          <ul className="mt-1 space-y-1">
+                            {grammarResults[index].errors.map((err: any, ei: number) => (
+                              <li key={ei} className="text-xs text-amber-800">
+                                • <span className="line-through text-red-600">{err.original}</span>
+                                → <span className="text-green-600 font-medium">{err.corrected}</span>
+                                <span className="text-slate-500 ml-1">({err.explanation})</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
                 
                 {/* 各项评分 */}
@@ -3145,34 +3281,58 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <Label className="text-xs text-slate-500">高分参考回答</Label>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => playModelAnswerTTS(index, response.modelAnswer)}
-                        disabled={generatingTTS === index}
-                        className="h-7 text-xs gap-1"
-                      >
-                        {generatingTTS === index ? (
-                          <>
+                      <div className="flex items-center gap-1">
+                        {/* 翻译按钮 */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => translateText(index, response.modelAnswer, 'modelAnswer')}
+                          disabled={translating?.index === index && translating?.type === 'modelAnswer'}
+                          className="h-7 text-xs gap-1"
+                        >
+                          {translating?.index === index && translating?.type === 'modelAnswer' ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
-                            生成中...
-                          </>
-                        ) : playingModel === index ? (
-                          <>
-                            <Square className="w-3 h-3" />
-                            停止播放
-                          </>
-                        ) : (
-                          <>
-                            <Volume2 className="w-3 h-3" />
-                            播放参考
-                          </>
-                        )}
-                      </Button>
+                          ) : (
+                            <Languages className="w-3 h-3" />
+                          )}
+                          {translations[`${index}_modelAnswer`] ? '隐藏翻译' : '翻译'}
+                        </Button>
+                        {/* TTS播放按钮 */}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => playModelAnswerTTS(index, response.modelAnswer)}
+                          disabled={generatingTTS === index}
+                          className="h-7 text-xs gap-1"
+                        >
+                          {generatingTTS === index ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              生成中...
+                            </>
+                          ) : playingModel === index ? (
+                            <>
+                              <Square className="w-3 h-3" />
+                              停止播放
+                            </>
+                          ) : (
+                            <>
+                              <Volume2 className="w-3 h-3" />
+                              播放参考
+                            </>
+                          )}
+                        </Button>
+                      </div>
                     </div>
                     <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-800">
                       {response.modelAnswer}
                     </div>
+                    {/* 参考回答翻译 */}
+                    {translations[`${index}_modelAnswer`] && (
+                      <div className="mt-2 p-3 bg-teal-50 border border-teal-200 rounded-lg text-sm text-teal-800">
+                        <strong>中文翻译：</strong>{translations[`${index}_modelAnswer`]}
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>
