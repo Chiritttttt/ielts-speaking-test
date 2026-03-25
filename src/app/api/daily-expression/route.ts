@@ -71,16 +71,19 @@ async function generateDailyExpression(date: string) {
 
 {
   "expression": "the idiomatic expression in English",
-  "meaning": "Chinese translation/meaning",
+  "meaning": "Chinese translation/meaning (简体中文)",
   "meaningEn": "English explanation of what it means",
-  "pronunciation": "pronunciation tips for Chinese speakers",
+  "pronunciation": "pronunciation tips for Chinese speakers (in Chinese)",
   "category": "one of: idiom, collocation, phrasal_verb, slang",
-  "usageTips": "tips on how to use it naturally",
-  "part1Example": "Example usage in IELTS Part 1 (simple personal question context) - include both question and sample answer using this expression",
-  "part2Example": "Example usage in IELTS Part 2 (cue card context) - show how to incorporate it in a 2-minute talk",
-  "part3Example": "Example usage in IELTS Part 3 (abstract discussion context) - include both question and sample answer",
-  "commonMistakes": "Common mistakes Chinese learners make with this expression",
-  "alternatives": "2-3 alternative expressions with similar meaning"
+  "usageTips": "tips on how to use it naturally (in Chinese)",
+  "part1Example": "Example usage in IELTS Part 1 - English question and answer",
+  "part1ExampleCn": "Chinese translation of the Part 1 example",
+  "part2Example": "Example usage in IELTS Part 2 - English cue card response snippet",
+  "part2ExampleCn": "Chinese translation of the Part 2 example",
+  "part3Example": "Example usage in IELTS Part 3 - English question and answer",
+  "part3ExampleCn": "Chinese translation of the Part 3 example",
+  "commonMistakes": "Common mistakes Chinese learners make (in Chinese)",
+  "alternatives": "2-3 alternative expressions with similar meaning and their Chinese meanings"
 }
 
 Requirements:
@@ -88,14 +91,15 @@ Requirements:
 2. The expression should be appropriate for IELTS Speaking (bands 6-8)
 3. Examples should be realistic IELTS questions and natural answers
 4. Avoid very informal slang or extremely rare expressions
-5. Good categories: idioms like "hit the nail on the head", collocations like "make a significant impact", phrasal verbs like "come up with"
+5. All Chinese content should be in Simplified Chinese (简体中文)
+6. Examples should clearly show how to use the expression in context
 
 Generate a different expression each time. Today's date is ${date}.`;
 
   try {
     const result = await callDeepSeek([
       { role: 'user', content: prompt }
-    ], { temperature: 0.8, max_tokens: 2000 });
+    ], { temperature: 0.8, max_tokens: 2500 });
 
     if (!result.success || !result.content) {
       console.error('[Daily Expression] AI generation failed:', result.error);
@@ -126,8 +130,11 @@ Generate a different expression each time. Today's date is ${date}.`;
         category: data.category || 'idiom',
         usageTips: data.usageTips || null,
         part1Example: data.part1Example || null,
+        part1ExampleCn: data.part1ExampleCn || null,
         part2Example: data.part2Example || null,
+        part2ExampleCn: data.part2ExampleCn || null,
         part3Example: data.part3Example || null,
+        part3ExampleCn: data.part3ExampleCn || null,
         commonMistakes: data.commonMistakes || null,
         alternatives: data.alternatives || null
       }

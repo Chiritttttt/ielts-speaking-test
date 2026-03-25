@@ -1848,6 +1848,8 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
   const [expression, setExpression] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'part1' | 'part2' | 'part3'>('overview');
+  const [playingText, setPlayingText] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     const fetchExpression = async () => {
@@ -1866,6 +1868,55 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
     fetchExpression();
   }, []);
 
+  // 播放发音
+  const playAudio = async (text: string) => {
+    if (playingText === text) {
+      // 正在播放，停止
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      setPlayingText(null);
+      return;
+    }
+
+    try {
+      setPlayingText(text);
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice: 'us-female', speed: 0.9 })
+      });
+
+      if (!response.ok) {
+        toast.error('发音服务暂时不可用');
+        setPlayingText(null);
+        return;
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+      
+      audio.onended = () => {
+        setPlayingText(null);
+        URL.revokeObjectURL(audioUrl);
+      };
+      
+      audio.onerror = () => {
+        setPlayingText(null);
+        URL.revokeObjectURL(audioUrl);
+      };
+
+      await audio.play();
+    } catch (error) {
+      console.error('[TTS] Error:', error);
+      toast.error('播放失败');
+      setPlayingText(null);
+    }
+  };
+
   const getCategoryLabel = (category: string) => {
     const labels: Record<string, string> = {
       idiom: '习语',
@@ -1878,12 +1929,109 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
 
   const getCategoryColor = (category: string) => {
     const colors: Record<string, string> = {
-      idiom: 'bg-purple-100 text-purple-700',
-      collocation: 'bg-blue-100 text-blue-700',
-      phrasal_verb: 'bg-green-100 text-green-700',
-      slang: 'bg-orange-100 text-orange-700'
+      idiom: 'bg-purple-100 text-purple-700 border-purple-200',
+      collocation: 'bg-blue-100 text-blue-700 border-blue-200',
+      phrasal_verb: 'bg-green-100 text-green-700 border-green-200',
+      slang: 'bg-orange-100 text-orange-700 border-orange-200'
     };
-    return colors[category] || 'bg-gray-100 text-gray-700';
+    return colors[category] || 'bg-slate-100 text-slate-700 border-slate-200';
+  };
+
+  // 示例渲染组件
+  const ExampleSection = ({ 
+    example, 
+    exampleCn, 
+    bgColor, 
+    borderColor,
+    partLabel,
+    partDesc 
+  }: { 
+    example: string | null; 
+    exampleCn: string | null;
+    bgColor: string;
+    borderColor: string;
+    partLabel: string;
+    partDesc: string;
+  }) => {
+    const [showTranslation, setShowTranslation] = useState(false);
+
+    if (!example) {
+      return (
+        <p className="text-slate-400 text-center py-8">暂无示例</p>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <Badge className={`${bgColor} border`}>{partLabel}</Badge>
+            <p className="text-xs text-slate-500 mt-1">{partDesc}</p>
+          </div>
+          <button
+            onClick={() => playAudio(example)}
+            disabled={playingText === example}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all ${
+              playingText === example 
+                ? 'bg-[#E31837] text-white' 
+                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            {playingText === example ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                播放中...
+              </>
+            ) : (
+              <>
+                <Volume2 className="w-3.5 h-3.5" />
+                听发音
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* 英文示例 */}
+        <div className={`p-4 rounded-lg border ${borderColor} ${bgColor.replace('text-', 'bg-').replace('-700', '-50')}`}>
+          <div className="prose prose-sm max-w-none">
+            {example.split('\n').map((line, i) => (
+              <p key={i} className={`mb-1 ${
+                line.startsWith('Q:') || line.startsWith('Question:') 
+                  ? 'font-medium text-slate-700' 
+                  : line.startsWith('A:') || line.startsWith('Answer:')
+                    ? 'text-slate-600'
+                    : 'text-slate-600'
+              }`}>
+                {line}
+              </p>
+            ))}
+          </div>
+        </div>
+
+        {/* 翻译切换 */}
+        {exampleCn && (
+          <>
+            <button
+              onClick={() => setShowTranslation(!showTranslation)}
+              className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
+            >
+              <Languages className="w-4 h-4" />
+              {showTranslation ? '隐藏翻译' : '查看翻译'}
+            </button>
+
+            {showTranslation && (
+              <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
+                <div className="prose prose-sm max-w-none text-slate-600">
+                  {exampleCn.split('\n').map((line, i) => (
+                    <p key={i} className="mb-1">{line}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
   };
 
   if (loading) {
@@ -1899,7 +2047,7 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
   if (!expression) {
     return (
       <div className="max-w-2xl mx-auto p-4">
-        <button onClick={onBack} className="flex items-center gap-2 text-slate-600 mb-6">
+        <button onClick={onBack} className="flex items-center gap-2 text-slate-600 mb-6 hover:text-slate-900">
           <ChevronLeft className="w-5 h-5" />
           返回首页
         </button>
@@ -1917,31 +2065,59 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
   return (
     <div className="max-w-2xl mx-auto p-4">
       {/* 返回按钮 */}
-      <button onClick={onBack} className="flex items-center gap-2 text-slate-600 mb-6 hover:text-slate-900">
+      <button onClick={onBack} className="flex items-center gap-2 text-slate-600 mb-4 hover:text-slate-900">
         <ChevronLeft className="w-5 h-5" />
         返回首页
       </button>
 
       {/* 主卡片 */}
-      <Card className="overflow-hidden">
+      <Card className="overflow-hidden border-0 shadow-sm">
         {/* 头部 */}
-        <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-6 text-white">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-2xl">📚</span>
-            <Badge className="bg-white/20 text-white border-0">每日地道表达</Badge>
-            <Badge className={`ml-auto ${getCategoryColor(expression.category)}`}>
+        <div className="bg-[#f8f8f8] p-5 border-b border-[#eaeaea]">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📚</span>
+              <span className="text-sm text-slate-500">每日地道表达</span>
+            </div>
+            <Badge className={getCategoryColor(expression.category)}>
               {getCategoryLabel(expression.category)}
             </Badge>
           </div>
-          <h1 className="text-2xl font-bold mb-2">{expression.expression}</h1>
-          <p className="text-white/90 text-lg">{expression.meaning}</p>
-          {expression.meaningEn && (
-            <p className="text-white/70 text-sm mt-2">{expression.meaningEn}</p>
-          )}
+          
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <h1 className="text-2xl font-bold text-[#222222] mb-1">{expression.expression}</h1>
+              <p className="text-[#666666]">{expression.meaning}</p>
+              {expression.meaningEn && (
+                <p className="text-sm text-slate-400 mt-1">{expression.meaningEn}</p>
+              )}
+            </div>
+            <button
+              onClick={() => playAudio(expression.expression)}
+              disabled={playingText === expression.expression}
+              className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                playingText === expression.expression 
+                  ? 'bg-[#E31837] text-white' 
+                  : 'bg-[#E31837] text-white hover:bg-[#C4142D]'
+              }`}
+            >
+              {playingText === expression.expression ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  播放中
+                </>
+              ) : (
+                <>
+                  <Volume2 className="w-4 h-4" />
+                  发音
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Tab 切换 */}
-        <div className="flex border-b">
+        <div className="flex border-b border-[#eaeaea]">
           {[
             { key: 'overview', label: '概述' },
             { key: 'part1', label: 'Part 1' },
@@ -1963,127 +2139,94 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
         </div>
 
         {/* Tab 内容 */}
-        <CardContent className="p-6">
+        <CardContent className="p-5">
           {activeTab === 'overview' && (
-            <div className="space-y-6">
+            <div className="space-y-5">
               {/* 发音提示 */}
               {expression.pronunciation && (
-                <div>
-                  <h3 className="font-semibold text-slate-700 mb-2 flex items-center gap-2">
-                    <Volume2 className="w-4 h-4 text-indigo-500" />
-                    发音提示
-                  </h3>
-                  <p className="text-slate-600 bg-indigo-50 p-3 rounded-lg">{expression.pronunciation}</p>
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
+                  <Volume2 className="w-4 h-4 text-indigo-500 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-slate-700 text-sm mb-1">发音提示</h4>
+                    <p className="text-slate-600 text-sm">{expression.pronunciation}</p>
+                  </div>
                 </div>
               )}
 
               {/* 使用技巧 */}
               {expression.usageTips && (
-                <div>
-                  <h3 className="font-semibold text-slate-700 mb-2 flex items-center gap-2">
-                    <Lightbulb className="w-4 h-4 text-amber-500" />
-                    使用技巧
-                  </h3>
-                  <p className="text-slate-600 bg-amber-50 p-3 rounded-lg">{expression.usageTips}</p>
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 border border-amber-100">
+                  <Lightbulb className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-slate-700 text-sm mb-1">使用技巧</h4>
+                    <p className="text-slate-600 text-sm">{expression.usageTips}</p>
+                  </div>
                 </div>
               )}
 
               {/* 常见错误 */}
               {expression.commonMistakes && (
-                <div>
-                  <h3 className="font-semibold text-slate-700 mb-2 flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-red-500" />
-                    常见错误
-                  </h3>
-                  <p className="text-slate-600 bg-red-50 p-3 rounded-lg">{expression.commonMistakes}</p>
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-red-50 border border-red-100">
+                  <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-slate-700 text-sm mb-1">常见错误</h4>
+                    <p className="text-slate-600 text-sm">{expression.commonMistakes}</p>
+                  </div>
                 </div>
               )}
 
               {/* 同义替换 */}
               {expression.alternatives && (
-                <div>
-                  <h3 className="font-semibold text-slate-700 mb-2 flex items-center gap-2">
-                    <RefreshCw className="w-4 h-4 text-green-500" />
-                    同义替换
-                  </h3>
-                  <p className="text-slate-600 bg-green-50 p-3 rounded-lg">{expression.alternatives}</p>
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 border border-green-100">
+                  <RefreshCw className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
+                  <div>
+                    <h4 className="font-medium text-slate-700 text-sm mb-1">同义替换</h4>
+                    <p className="text-slate-600 text-sm">{expression.alternatives}</p>
+                  </div>
                 </div>
               )}
             </div>
           )}
 
           {activeTab === 'part1' && (
-            <div>
-              <div className="mb-4">
-                <Badge className="bg-blue-100 text-blue-700">Part 1 应用</Badge>
-                <p className="text-xs text-slate-500 mt-1">简介与面试环节，简单日常话题</p>
-              </div>
-              {expression.part1Example ? (
-                <div className="bg-blue-50 p-4 rounded-lg space-y-3">
-                  <div className="prose prose-sm max-w-none">
-                    {expression.part1Example.split('\n').map((line: string, i: number) => (
-                      <p key={i} className={line.startsWith('Q:') || line.startsWith('Question:') ? 'font-medium text-slate-700' : 'text-slate-600'}>
-                        {line}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-slate-500 text-center py-8">暂无 Part 1 示例</p>
-              )}
-            </div>
+            <ExampleSection 
+              example={expression.part1Example}
+              exampleCn={expression.part1ExampleCn}
+              bgColor="bg-blue-100 text-blue-700"
+              borderColor="border-blue-200"
+              partLabel="Part 1 应用"
+              partDesc="简介与面试环节，简单日常话题"
+            />
           )}
 
           {activeTab === 'part2' && (
-            <div>
-              <div className="mb-4">
-                <Badge className="bg-green-100 text-green-700">Part 2 应用</Badge>
-                <p className="text-xs text-slate-500 mt-1">个人陈述环节，2分钟独白话题</p>
-              </div>
-              {expression.part2Example ? (
-                <div className="bg-green-50 p-4 rounded-lg space-y-3">
-                  <div className="prose prose-sm max-w-none">
-                    {expression.part2Example.split('\n').map((line: string, i: number) => (
-                      <p key={i} className={line.startsWith('•') ? 'text-slate-600 pl-2' : 'text-slate-600'}>
-                        {line}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-slate-500 text-center py-8">暂无 Part 2 示例</p>
-              )}
-            </div>
+            <ExampleSection 
+              example={expression.part2Example}
+              exampleCn={expression.part2ExampleCn}
+              bgColor="bg-green-100 text-green-700"
+              borderColor="border-green-200"
+              partLabel="Part 2 应用"
+              partDesc="个人陈述环节，2分钟独白话题"
+            />
           )}
 
           {activeTab === 'part3' && (
-            <div>
-              <div className="mb-4">
-                <Badge className="bg-purple-100 text-purple-700">Part 3 应用</Badge>
-                <p className="text-xs text-slate-500 mt-1">双向讨论环节，抽象话题深入分析</p>
-              </div>
-              {expression.part3Example ? (
-                <div className="bg-purple-50 p-4 rounded-lg space-y-3">
-                  <div className="prose prose-sm max-w-none">
-                    {expression.part3Example.split('\n').map((line: string, i: number) => (
-                      <p key={i} className={line.startsWith('Q:') || line.startsWith('Question:') ? 'font-medium text-slate-700' : 'text-slate-600'}>
-                        {line}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p className="text-slate-500 text-center py-8">暂无 Part 3 示例</p>
-              )}
-            </div>
+            <ExampleSection 
+              example={expression.part3Example}
+              exampleCn={expression.part3ExampleCn}
+              bgColor="bg-purple-100 text-purple-700"
+              borderColor="border-purple-200"
+              partLabel="Part 3 应用"
+              partDesc="双向讨论环节，抽象话题深入分析"
+            />
           )}
         </CardContent>
       </Card>
 
       {/* 底部提示 */}
-      <div className="mt-6 text-center text-slate-500 text-sm">
-        <p>💡 每天学习一个地道表达，提升你的雅思口语分数</p>
-        <p className="text-xs mt-1">每24小时自动更新新内容</p>
+      <div className="mt-6 text-center text-slate-400 text-xs">
+        <p>每天学习一个地道表达，提升雅思口语分数</p>
+        <p className="mt-1">每24小时自动更新</p>
       </div>
     </div>
   );

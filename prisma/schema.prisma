@@ -190,21 +190,24 @@ model IdiomaticExpression {
 
 // 每日地道表达缓存
 model DailyExpression {
-  id            String   @id @default(cuid())
-  date          String   @unique            // 日期，如 "2024-01-15"
-  expression    String                    // 表达本身
-  meaning       String                    // 中文含义
-  meaningEn     String?                   // 英文解释
-  pronunciation String?                   // 发音提示
-  category      String                    // 分类
-  usageTips     String?                   // 使用技巧
-  part1Example  String?                   // Part 1 应用示例
-  part2Example  String?                   // Part 2 应用示例
-  part3Example  String?                   // Part 3 应用示例
-  commonMistakes String?                  // 常见错误
-  alternatives  String?                   // 同义替换
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  date            String   @unique            // 日期，如 "2024-01-15"
+  expression      String                    // 表达本身
+  meaning         String                    // 中文含义
+  meaningEn       String?                   // 英文解释
+  pronunciation   String?                   // 发音提示
+  category        String                    // 分类
+  usageTips       String?                   // 使用技巧
+  part1Example    String?                   // Part 1 应用示例
+  part1ExampleCn  String?                   // Part 1 示例翻译
+  part2Example    String?                   // Part 2 应用示例
+  part2ExampleCn  String?                   // Part 2 示例翻译
+  part3Example    String?                   // Part 3 应用示例
+  part3ExampleCn  String?                   // Part 3 示例翻译
+  commonMistakes  String?                   // 常见错误
+  alternatives    String?                   // 同义替换
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([date])
 }
