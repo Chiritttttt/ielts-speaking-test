@@ -164,3 +164,47 @@ model Announcement {
 
   @@index([isActive, priority])
 }
+
+// 地道表达
+model IdiomaticExpression {
+  id            String   @id @default(cuid())
+  expression    String                    // 表达本身，如 "a piece of cake"
+  meaning       String                    // 中文含义，如 "小菜一碟"
+  meaningEn     String?                   // 英文解释
+  category      String                    // 分类：collocation, idiom, phrasal_verb, slang
+  topic         String?                   // 相关话题，如 "work", "study", "travel"
+  level         String   @default("intermediate") // 难度：beginner, intermediate, advanced
+  example       String?                   // 例句
+  exampleCn     String?                   // 例句中文翻译
+  usageTips     String?                   // 使用技巧
+  ieltsScore    String?                   // 适合雅思分数段，如 "6-7", "7+"
+  isCommon      Boolean  @default(false)  // 是否为常用表达
+  isActive      Boolean  @default(true)   // 是否启用
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([category, topic])
+  @@index([level, isCommon])
+  @@index([isActive])
+}
+
+// 每日地道表达缓存
+model DailyExpression {
+  id            String   @id @default(cuid())
+  date          String   @unique            // 日期，如 "2024-01-15"
+  expression    String                    // 表达本身
+  meaning       String                    // 中文含义
+  meaningEn     String?                   // 英文解释
+  pronunciation String?                   // 发音提示
+  category      String                    // 分类
+  usageTips     String?                   // 使用技巧
+  part1Example  String?                   // Part 1 应用示例
+  part2Example  String?                   // Part 2 应用示例
+  part3Example  String?                   // Part 3 应用示例
+  commonMistakes String?                  // 常见错误
+  alternatives  String?                   // 同义替换
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([date])
+}

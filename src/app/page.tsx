@@ -1270,7 +1270,11 @@ export default function IELTSSpeakingApp() {
   const renderView = () => {
     switch (currentView) {
       case 'home':
-        return <HomeView onStartTest={openTopicDialog} onViewHistory={() => { fetchHistory(); setView('history'); }} />;
+        return <HomeView 
+          onStartTest={openTopicDialog} 
+          onViewHistory={() => { fetchHistory(); setView('history'); }}
+          onLearnExpression={() => setView('expression')}
+        />;
       case 'test':
         // Part 3 使用动态讨论视图
         if (currentPart === 3 && part3Discussion.isActive) {
@@ -1341,8 +1345,14 @@ export default function IELTSSpeakingApp() {
         return <SettingsView settings={settings} updateSetting={updateSetting} user={user} />;
       case 'admin':
         return <AdminView onBack={() => setView('home')} />;
+      case 'expression':
+        return <ExpressionView onBack={() => setView('home')} />;
       default:
-        return <HomeView onStartTest={openTopicDialog} onViewHistory={() => { fetchHistory(); setView('history'); }} />;
+        return <HomeView 
+          onStartTest={openTopicDialog} 
+          onViewHistory={() => { fetchHistory(); setView('history'); }}
+          onLearnExpression={() => setView('expression')}
+        />;
     }
   };
 
@@ -1825,12 +1835,260 @@ function AnnouncementBanner({ announcements }: { announcements: Announcement[] }
   );
 }
 
+// 地道表达学习页面
+function ExpressionView({ onBack }: { onBack: () => void }) {
+  const [expression, setExpression] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'overview' | 'part1' | 'part2' | 'part3'>('overview');
+
+  useEffect(() => {
+    const fetchExpression = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch('/api/daily-expression');
+        const data = await response.json();
+        if (data.success && data.expression) {
+          setExpression(data.expression);
+        }
+      } catch (error) {
+        console.error('[Expression] Fetch error:', error);
+      }
+      setLoading(false);
+    };
+    fetchExpression();
+  }, []);
+
+  const getCategoryLabel = (category: string) => {
+    const labels: Record<string, string> = {
+      idiom: '习语',
+      collocation: '固定搭配',
+      phrasal_verb: '动词短语',
+      slang: '俚语'
+    };
+    return labels[category] || category;
+  };
+
+  const getCategoryColor = (category: string) => {
+    const colors: Record<string, string> = {
+      idiom: 'bg-purple-100 text-purple-700',
+      collocation: 'bg-blue-100 text-blue-700',
+      phrasal_verb: 'bg-green-100 text-green-700',
+      slang: 'bg-orange-100 text-orange-700'
+    };
+    return colors[category] || 'bg-gray-100 text-gray-700';
+  };
+
+  if (loading) {
+    return (
+      <div className="max-w-2xl mx-auto p-4">
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-[#E31837]" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!expression) {
+    return (
+      <div className="max-w-2xl mx-auto p-4">
+        <button onClick={onBack} className="flex items-center gap-2 text-slate-600 mb-6">
+          <ChevronLeft className="w-5 h-5" />
+          返回首页
+        </button>
+        <Card>
+          <CardContent className="pt-8 pb-8 text-center text-slate-500">
+            <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p>暂无今日地道表达</p>
+            <p className="text-sm mt-1">请稍后再试</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto p-4">
+      {/* 返回按钮 */}
+      <button onClick={onBack} className="flex items-center gap-2 text-slate-600 mb-6 hover:text-slate-900">
+        <ChevronLeft className="w-5 h-5" />
+        返回首页
+      </button>
+
+      {/* 主卡片 */}
+      <Card className="overflow-hidden">
+        {/* 头部 */}
+        <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-6 text-white">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-2xl">📚</span>
+            <Badge className="bg-white/20 text-white border-0">每日地道表达</Badge>
+            <Badge className={`ml-auto ${getCategoryColor(expression.category)}`}>
+              {getCategoryLabel(expression.category)}
+            </Badge>
+          </div>
+          <h1 className="text-2xl font-bold mb-2">{expression.expression}</h1>
+          <p className="text-white/90 text-lg">{expression.meaning}</p>
+          {expression.meaningEn && (
+            <p className="text-white/70 text-sm mt-2">{expression.meaningEn}</p>
+          )}
+        </div>
+
+        {/* Tab 切换 */}
+        <div className="flex border-b">
+          {[
+            { key: 'overview', label: '概述' },
+            { key: 'part1', label: 'Part 1' },
+            { key: 'part2', label: 'Part 2' },
+            { key: 'part3', label: 'Part 3' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key as any)}
+              className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                activeTab === tab.key
+                  ? 'text-[#E31837] border-b-2 border-[#E31837]'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab 内容 */}
+        <CardContent className="p-6">
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              {/* 发音提示 */}
+              {expression.pronunciation && (
+                <div>
+                  <h3 className="font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                    <Volume2 className="w-4 h-4 text-indigo-500" />
+                    发音提示
+                  </h3>
+                  <p className="text-slate-600 bg-indigo-50 p-3 rounded-lg">{expression.pronunciation}</p>
+                </div>
+              )}
+
+              {/* 使用技巧 */}
+              {expression.usageTips && (
+                <div>
+                  <h3 className="font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                    <Lightbulb className="w-4 h-4 text-amber-500" />
+                    使用技巧
+                  </h3>
+                  <p className="text-slate-600 bg-amber-50 p-3 rounded-lg">{expression.usageTips}</p>
+                </div>
+              )}
+
+              {/* 常见错误 */}
+              {expression.commonMistakes && (
+                <div>
+                  <h3 className="font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-red-500" />
+                    常见错误
+                  </h3>
+                  <p className="text-slate-600 bg-red-50 p-3 rounded-lg">{expression.commonMistakes}</p>
+                </div>
+              )}
+
+              {/* 同义替换 */}
+              {expression.alternatives && (
+                <div>
+                  <h3 className="font-semibold text-slate-700 mb-2 flex items-center gap-2">
+                    <RefreshCw className="w-4 h-4 text-green-500" />
+                    同义替换
+                  </h3>
+                  <p className="text-slate-600 bg-green-50 p-3 rounded-lg">{expression.alternatives}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'part1' && (
+            <div>
+              <div className="mb-4">
+                <Badge className="bg-blue-100 text-blue-700">Part 1 应用</Badge>
+                <p className="text-xs text-slate-500 mt-1">简介与面试环节，简单日常话题</p>
+              </div>
+              {expression.part1Example ? (
+                <div className="bg-blue-50 p-4 rounded-lg space-y-3">
+                  <div className="prose prose-sm max-w-none">
+                    {expression.part1Example.split('\n').map((line: string, i: number) => (
+                      <p key={i} className={line.startsWith('Q:') || line.startsWith('Question:') ? 'font-medium text-slate-700' : 'text-slate-600'}>
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-slate-500 text-center py-8">暂无 Part 1 示例</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'part2' && (
+            <div>
+              <div className="mb-4">
+                <Badge className="bg-green-100 text-green-700">Part 2 应用</Badge>
+                <p className="text-xs text-slate-500 mt-1">个人陈述环节，2分钟独白话题</p>
+              </div>
+              {expression.part2Example ? (
+                <div className="bg-green-50 p-4 rounded-lg space-y-3">
+                  <div className="prose prose-sm max-w-none">
+                    {expression.part2Example.split('\n').map((line: string, i: number) => (
+                      <p key={i} className={line.startsWith('•') ? 'text-slate-600 pl-2' : 'text-slate-600'}>
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-slate-500 text-center py-8">暂无 Part 2 示例</p>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'part3' && (
+            <div>
+              <div className="mb-4">
+                <Badge className="bg-purple-100 text-purple-700">Part 3 应用</Badge>
+                <p className="text-xs text-slate-500 mt-1">双向讨论环节，抽象话题深入分析</p>
+              </div>
+              {expression.part3Example ? (
+                <div className="bg-purple-50 p-4 rounded-lg space-y-3">
+                  <div className="prose prose-sm max-w-none">
+                    {expression.part3Example.split('\n').map((line: string, i: number) => (
+                      <p key={i} className={line.startsWith('Q:') || line.startsWith('Question:') ? 'font-medium text-slate-700' : 'text-slate-600'}>
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-slate-500 text-center py-8">暂无 Part 3 示例</p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 底部提示 */}
+      <div className="mt-6 text-center text-slate-500 text-sm">
+        <p>💡 每天学习一个地道表达，提升你的雅思口语分数</p>
+        <p className="text-xs mt-1">每24小时自动更新新内容</p>
+      </div>
+    </div>
+  );
+}
+
 // Home View
-function HomeView({ onStartTest, onViewHistory }: { 
+function HomeView({ onStartTest, onViewHistory, onLearnExpression }: { 
   onStartTest: (mode: 'part1' | 'part2' | 'part3' | 'full') => void;
   onViewHistory?: () => void;
+  onLearnExpression?: () => void;
 }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [todayExpression, setTodayExpression] = useState<any>(null);
 
   // 获取公告
   useEffect(() => {
@@ -1846,6 +2104,22 @@ function HomeView({ onStartTest, onViewHistory }: {
       }
     };
     fetchAnnouncements();
+  }, []);
+
+  // 预加载今日地道表达
+  useEffect(() => {
+    const fetchExpression = async () => {
+      try {
+        const response = await fetch('/api/daily-expression');
+        const data = await response.json();
+        if (data.success && data.expression) {
+          setTodayExpression(data.expression);
+        }
+      } catch (error) {
+        console.error('[Expression] Fetch error:', error);
+      }
+    };
+    fetchExpression();
   }, []);
 
   return (
@@ -1894,6 +2168,30 @@ function HomeView({ onStartTest, onViewHistory }: {
           ))}
         </div>
       </div>
+
+      {/* 每日地道表达入口 */}
+      {todayExpression && (
+        <div className="px-1 pb-6">
+          <button
+            onClick={() => onLearnExpression?.()}
+            className="w-full p-4 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-left shadow-lg hover:shadow-xl transition-all"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-lg">📚</span>
+                  <span className="text-xs font-medium bg-white/20 px-2 py-0.5 rounded-full">每日地道表达</span>
+                </div>
+                <h3 className="font-semibold text-lg mb-1">{todayExpression.expression}</h3>
+                <p className="text-sm text-white/80">{todayExpression.meaning}</p>
+              </div>
+              <div className="text-white/60 ml-4">
+                <ChevronRight className="w-6 h-6" />
+              </div>
+            </div>
+          </button>
+        </div>
+      )}
 
       <div className="bg-[#f5f5f5] -mx-4 px-4 py-10 mt-4">
         <h3 className="text-xs font-semibold text-[#666666] mb-5 uppercase tracking-wider">评分标准</h3>
