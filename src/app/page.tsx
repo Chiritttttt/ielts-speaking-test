@@ -1944,7 +1944,8 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
     bgColor, 
     borderColor,
     partLabel,
-    partDesc 
+    partDesc,
+    part
   }: { 
     example: string | null; 
     exampleCn: string | null;
@@ -1952,8 +1953,44 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
     borderColor: string;
     partLabel: string;
     partDesc: string;
+    part: '1' | '2' | '3';
   }) => {
     const [showTranslation, setShowTranslation] = useState(false);
+    const [translation, setTranslation] = useState<string | null>(exampleCn);
+    const [translating, setTranslating] = useState(false);
+
+    const handleTranslate = async () => {
+      if (translation) {
+        // 已有翻译，直接切换显示
+        setShowTranslation(!showTranslation);
+        return;
+      }
+
+      // 没有翻译，调用 API
+      setTranslating(true);
+      try {
+        const response = await fetch('/api/translate-example', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expressionId: expression.id,
+            part,
+            text: example
+          })
+        });
+
+        const data = await response.json();
+        if (data.success) {
+          setTranslation(data.translation);
+          setShowTranslation(true);
+        } else {
+          toast.error(data.error || '翻译失败');
+        }
+      } catch (error) {
+        toast.error('翻译失败');
+      }
+      setTranslating(false);
+    };
 
     if (!example) {
       return (
@@ -2008,27 +2045,34 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
           </div>
         </div>
 
-        {/* 翻译切换 */}
-        {exampleCn && (
-          <>
-            <button
-              onClick={() => setShowTranslation(!showTranslation)}
-              className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700"
-            >
+        {/* 翻译按钮 */}
+        <button
+          onClick={handleTranslate}
+          disabled={translating}
+          className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 disabled:opacity-50"
+        >
+          {translating ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              翻译中...
+            </>
+          ) : (
+            <>
               <Languages className="w-4 h-4" />
               {showTranslation ? '隐藏翻译' : '查看翻译'}
-            </button>
+            </>
+          )}
+        </button>
 
-            {showTranslation && (
-              <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
-                <div className="prose prose-sm max-w-none text-slate-600">
-                  {exampleCn.split('\n').map((line, i) => (
-                    <p key={i} className="mb-1">{line}</p>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
+        {/* 翻译内容 */}
+        {showTranslation && translation && (
+          <div className="p-4 rounded-lg bg-slate-50 border border-slate-200">
+            <div className="prose prose-sm max-w-none text-slate-600">
+              {translation.split('\n').map((line, i) => (
+                <p key={i} className="mb-1">{line}</p>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     );
@@ -2196,6 +2240,7 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
               borderColor="border-blue-200"
               partLabel="Part 1 应用"
               partDesc="简介与面试环节，简单日常话题"
+              part="1"
             />
           )}
 
@@ -2207,6 +2252,7 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
               borderColor="border-green-200"
               partLabel="Part 2 应用"
               partDesc="个人陈述环节，2分钟独白话题"
+              part="2"
             />
           )}
 
@@ -2218,6 +2264,7 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
               borderColor="border-purple-200"
               partLabel="Part 3 应用"
               partDesc="双向讨论环节，抽象话题深入分析"
+              part="3"
             />
           )}
         </CardContent>

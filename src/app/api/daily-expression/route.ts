@@ -85,6 +85,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * 调用 DeepSeek 生成每日地道表达
+ * 翻译在用户点击时按需生成
  */
 async function generateDailyExpression(date: string) {
   const prompt = `Generate a daily IELTS idiomatic expression for Chinese learners. Return ONLY valid JSON with this exact structure:
@@ -97,11 +98,8 @@ async function generateDailyExpression(date: string) {
   "category": "one of: idiom, collocation, phrasal_verb, slang",
   "usageTips": "tips on how to use it naturally (in Chinese)",
   "part1Example": "Example usage in IELTS Part 1 - English question and answer",
-  "part1ExampleCn": "Chinese translation of the Part 1 example",
   "part2Example": "Example usage in IELTS Part 2 - English cue card response snippet",
-  "part2ExampleCn": "Chinese translation of the Part 2 example",
   "part3Example": "Example usage in IELTS Part 3 - English question and answer",
-  "part3ExampleCn": "Chinese translation of the Part 3 example",
   "commonMistakes": "Common mistakes Chinese learners make (in Chinese)",
   "alternatives": "2-3 alternative expressions with similar meaning and their Chinese meanings"
 }
@@ -119,7 +117,7 @@ Generate a different expression each time. Today's date is ${date}.`;
   try {
     const result = await callDeepSeek([
       { role: 'user', content: prompt }
-    ], { temperature: 0.8, max_tokens: 2500 });
+    ], { temperature: 0.8, max_tokens: 2000 });
 
     if (!result.success || !result.content) {
       console.error('[Daily Expression] AI generation failed:', result.error);
@@ -139,7 +137,7 @@ Generate a different expression each time. Today's date is ${date}.`;
 
     const data = JSON.parse(jsonStr);
 
-    // 保存到数据库
+    // 保存到数据库（不包含翻译，翻译按需生成）
     const saved = await db.dailyExpression.create({
       data: {
         date,
@@ -150,11 +148,11 @@ Generate a different expression each time. Today's date is ${date}.`;
         category: data.category || 'idiom',
         usageTips: data.usageTips || null,
         part1Example: data.part1Example || null,
-        part1ExampleCn: data.part1ExampleCn || null,
+        part1ExampleCn: null, // 翻译按需生成
         part2Example: data.part2Example || null,
-        part2ExampleCn: data.part2ExampleCn || null,
+        part2ExampleCn: null,
         part3Example: data.part3Example || null,
-        part3ExampleCn: data.part3ExampleCn || null,
+        part3ExampleCn: null,
         commonMistakes: data.commonMistakes || null,
         alternatives: data.alternatives || null
       }
