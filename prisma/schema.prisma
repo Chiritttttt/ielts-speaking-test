@@ -123,3 +123,19 @@ model QuestionBank {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
+// 公告管理
+model Announcement {
+  id          String   @id @default(cuid())
+  title       String                    // 公告标题
+  content     String                    // 公告内容
+  type        String   @default("info") // info, warning, maintenance, update
+  isActive    Boolean  @default(true)   // 是否启用
+  priority    Int      @default(0)      // 优先级，数字越大越靠前
+  startDate   DateTime?                 // 开始显示时间
+  endDate     DateTime?                 // 结束显示时间
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, priority])
+}

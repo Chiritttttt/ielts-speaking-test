@@ -1310,6 +1310,8 @@ export default function IELTSSpeakingApp() {
         return <QuestionBankView isLoading={isLoading} setIsLoading={setIsLoading} user={user} showLoginDialog={() => setShowLoginDialog(true)} />;
       case 'settings':
         return <SettingsView settings={settings} updateSetting={updateSetting} user={user} />;
+      case 'admin':
+        return <AdminView onBack={() => setView('home')} />;
       default:
         return <HomeView onStartTest={openTopicDialog} onViewHistory={() => { fetchHistory(); setView('history'); }} />;
     }
@@ -1340,7 +1342,11 @@ export default function IELTSSpeakingApp() {
                 <button
                   key={item.label}
                   onClick={item.action}
-                  className="px-4 py-4 text-sm text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+                  className={`px-4 py-4 text-sm transition-colors ${
+                    currentView === item.view 
+                      ? 'text-white bg-white/10' 
+                      : 'text-white/80 hover:text-white hover:bg-white/10'
+                  }`}
                 >
                   {item.label}
                 </button>
@@ -1352,9 +1358,13 @@ export default function IELTSSpeakingApp() {
                 {/* 管理员入口 */}
                 {authUser.role === 'admin' && (
                   <button
-                    onClick={() => window.location.href = '/admin'}
-                    className="p-2 text-white/70 hover:text-white hover:bg-white/10 rounded transition-colors"
-                    title="管理后台"
+                    onClick={() => setView('admin')}
+                    className={`p-2 rounded transition-colors ${
+                      currentView === 'admin'
+                        ? 'text-white bg-white/20'
+                        : 'text-white/70 hover:text-white hover:bg-white/10'
+                    }`}
+                    title="公告管理"
                   >
                     <Shield className="w-4 h-4" />
                   </button>
@@ -1671,13 +1681,119 @@ function CompletedView({
   );
 }
 
+// 公告类型定义
+interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  type: string;
+  isActive: boolean;
+  priority: number;
+  createdAt: string;
+}
+
+// 公告组件
+function AnnouncementBanner({ announcements }: { announcements: Announcement[] }) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isVisible, setIsVisible] = useState(true);
+
+  if (announcements.length === 0 || !isVisible) return null;
+
+  const current = announcements[currentIndex];
+
+  // 根据类型设置样式
+  const getStyle = (type: string) => {
+    switch (type) {
+      case 'maintenance':
+        return 'bg-red-50 border-red-200 text-red-800';
+      case 'warning':
+        return 'bg-amber-50 border-amber-200 text-amber-800';
+      case 'update':
+        return 'bg-blue-50 border-blue-200 text-blue-800';
+      default:
+        return 'bg-slate-50 border-slate-200 text-slate-700';
+    }
+  };
+
+  const getIcon = (type: string) => {
+    switch (type) {
+      case 'maintenance':
+        return '🔧';
+      case 'warning':
+        return '⚠️';
+      case 'update':
+        return '📢';
+      default:
+        return '📣';
+    }
+  };
+
+  return (
+    <div className={`-mx-4 px-4 py-3 border-b ${getStyle(current.type)}`}>
+      <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-lg shrink-0">{getIcon(current.type)}</span>
+          <div className="min-w-0">
+            {current.title && (
+              <span className="font-medium mr-2">{current.title}:</span>
+            )}
+            <span className="text-sm">{current.content}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {announcements.length > 1 && (
+            <div className="flex items-center gap-1 mr-2">
+              {announcements.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setCurrentIndex(i)}
+                  className={`w-2 h-2 rounded-full transition-colors ${
+                    i === currentIndex ? 'bg-current' : 'bg-current/30'
+                  }`}
+                />
+              ))}
+            </div>
+          )}
+          <button
+            onClick={() => setIsVisible(false)}
+            className="p-1 hover:bg-black/5 rounded transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Home View
 function HomeView({ onStartTest, onViewHistory }: { 
   onStartTest: (mode: 'part1' | 'part2' | 'part3' | 'full') => void;
   onViewHistory?: () => void;
 }) {
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+
+  // 获取公告
+  useEffect(() => {
+    const fetchAnnouncements = async () => {
+      try {
+        const response = await fetch('/api/announcement');
+        const data = await response.json();
+        if (data.success) {
+          setAnnouncements(data.announcements);
+        }
+      } catch (error) {
+        console.error('[Announcement] Fetch error:', error);
+      }
+    };
+    fetchAnnouncements();
+  }, []);
+
   return (
     <div className="space-y-0">
+      {/* 公告横幅 */}
+      <AnnouncementBanner announcements={announcements} />
+      
       <div className="bg-[#f8f8f8] -mx-4 px-4 py-16 text-center border-b border-[#eaeaea]">
         {/* IELTS Logo */}
         <div className="flex justify-center mb-4">
@@ -4725,6 +4841,258 @@ function SettingsView({ settings, updateSetting, user }: {
             </div>
             <Switch checked={settings.autoPlayQuestion} onCheckedChange={(checked) => updateSetting('autoPlayQuestion', checked)} />
           </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// Admin View - 公告管理
+function AdminView({ onBack }: { onBack: () => void }) {
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    title: '',
+    content: '',
+    type: 'info',
+    isActive: true,
+    priority: 0
+  });
+
+  // 获取所有公告
+  const fetchAnnouncements = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/announcement?all=true');
+      const data = await response.json();
+      if (data.success) {
+        setAnnouncements(data.announcements);
+      }
+    } catch (error) {
+      toast.error('获取公告失败');
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchAnnouncements();
+  }, []);
+
+  // 创建或更新公告
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.title || !formData.content) {
+      toast.error('标题和内容不能为空');
+      return;
+    }
+
+    try {
+      const url = editingId ? '/api/announcement' : '/api/announcement';
+      const method = editingId ? 'PUT' : 'POST';
+      const body = editingId ? { ...formData, id: editingId } : formData;
+
+      const response = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success(editingId ? '公告已更新' : '公告已创建');
+        setFormData({ title: '', content: '', type: 'info', isActive: true, priority: 0 });
+        setEditingId(null);
+        fetchAnnouncements();
+      } else {
+        toast.error(data.error || '操作失败');
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    }
+  };
+
+  // 删除公告
+  const handleDelete = async (id: string) => {
+    if (!confirm('确定删除此公告？')) return;
+
+    try {
+      const response = await fetch(`/api/announcement?id=${id}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('公告已删除');
+        fetchAnnouncements();
+      } else {
+        toast.error(data.error || '删除失败');
+      }
+    } catch (error) {
+      toast.error('删除失败');
+    }
+  };
+
+  // 编辑公告
+  const handleEdit = (announcement: any) => {
+    setEditingId(announcement.id);
+    setFormData({
+      title: announcement.title,
+      content: announcement.content,
+      type: announcement.type,
+      isActive: announcement.isActive,
+      priority: announcement.priority
+    });
+  };
+
+  // 取消编辑
+  const handleCancel = () => {
+    setEditingId(null);
+    setFormData({ title: '', content: '', type: 'info', isActive: true, priority: 0 });
+  };
+
+  const typeOptions = [
+    { value: 'info', label: '普通通知', color: 'bg-slate-50 border-slate-200' },
+    { value: 'update', label: '功能更新', color: 'bg-blue-50 border-blue-200' },
+    { value: 'warning', label: '重要提醒', color: 'bg-amber-50 border-amber-200' },
+    { value: 'maintenance', label: '维护通知', color: 'bg-red-50 border-red-200' }
+  ];
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold">公告管理</h2>
+        <Button variant="outline" onClick={onBack}>
+          返回
+        </Button>
+      </div>
+
+      {/* 创建/编辑公告 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{editingId ? '编辑公告' : '发布新公告'}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label className="text-sm font-medium">标题</Label>
+              <Input
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                placeholder="公告标题（可选）"
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <Label className="text-sm font-medium">内容 *</Label>
+              <textarea
+                value={formData.content}
+                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                placeholder="公告内容..."
+                className="mt-1 w-full min-h-[80px] p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label className="text-sm font-medium">类型</Label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="mt-1 w-full p-2 border border-slate-200 rounded-lg text-sm"
+                >
+                  {typeOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label className="text-sm font-medium">优先级</Label>
+                <Input
+                  type="number"
+                  value={formData.priority}
+                  onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 0 })}
+                  placeholder="0"
+                  className="mt-1"
+                />
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.isActive}
+                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                    className="w-4 h-4"
+                  />
+                  <span className="text-sm">启用</span>
+                </label>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button type="submit" className="bg-[#E31837] hover:bg-[#C4142D]">
+                {editingId ? '更新公告' : '发布公告'}
+              </Button>
+              {editingId && (
+                <Button type="button" variant="outline" onClick={handleCancel}>
+                  取消
+                </Button>
+              )}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* 公告列表 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>已有公告 ({announcements.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="text-center py-8 text-slate-500">
+              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+              加载中...
+            </div>
+          ) : announcements.length === 0 ? (
+            <div className="text-center py-8 text-slate-500">
+              暂无公告
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {announcements.map((a) => (
+                <div
+                  key={a.id}
+                  className={`p-4 rounded-lg border ${
+                    typeOptions.find(t => t.value === a.type)?.color || 'bg-slate-50'
+                  } ${!a.isActive ? 'opacity-50' : ''}`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        {a.title && <span className="font-medium">{a.title}</span>}
+                        <Badge variant="outline" className="text-xs">
+                          {typeOptions.find(t => t.value === a.type)?.label}
+                        </Badge>
+                        {!a.isActive && (
+                          <Badge variant="outline" className="text-xs bg-slate-100">已禁用</Badge>
+                        )}
+                        <span className="text-xs text-slate-400">优先级: {a.priority}</span>
+                      </div>
+                      <p className="text-sm">{a.content}</p>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {new Date(a.createdAt).toLocaleString('zh-CN')}
+                      </p>
+                    </div>
+                    <div className="flex gap-1 ml-2">
+                      <Button size="sm" variant="ghost" onClick={() => handleEdit(a)}>
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDelete(a.id)} className="text-red-500 hover:text-red-700">
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type ViewType = 'home' | 'test' | 'completed' | 'result' | 'improvement' | 'history' | 'questionBank' | 'settings';
+export type ViewType = 'home' | 'test' | 'completed' | 'result' | 'improvement' | 'history' | 'questionBank' | 'settings' | 'admin';
 
 export interface AppSettings {
   defaultVoice: string;
