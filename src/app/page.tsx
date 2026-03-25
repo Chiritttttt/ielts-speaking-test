@@ -263,6 +263,7 @@ export default function IELTSSpeakingApp() {
   // 题库相关状态
   const [questionPools, setQuestionPools] = useState<any[]>([]);
   const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
+  const [showPoolSelector, setShowPoolSelector] = useState(false);
 
   // 获取题库列表
   useEffect(() => {
@@ -272,11 +273,18 @@ export default function IELTSSpeakingApp() {
         const data = await response.json();
         if (data.success) {
           setQuestionPools(data.pools);
-          // 自动选择默认题库
+          // 智能选择：优先选择默认题库，如果默认题库没题目则选择有题目的题库
           const defaultPool = data.pools.find((p: any) => p.isDefault);
-          if (defaultPool) {
+          const poolsWithQuestions = data.pools.filter((p: any) => (p.totalCount || 0) > 0);
+          
+          if (defaultPool && (defaultPool.totalCount || 0) > 0) {
+            // 默认题库有题目，使用默认
             setSelectedPoolId(defaultPool.id);
+          } else if (poolsWithQuestions.length > 0) {
+            // 默认题库没题目，选择第一个有题目的
+            setSelectedPoolId(poolsWithQuestions[0].id);
           } else if (data.pools.length > 0) {
+            // 都没题目，选择第一个
             setSelectedPoolId(data.pools[0].id);
           }
         }
@@ -320,7 +328,7 @@ export default function IELTSSpeakingApp() {
         const generateResponse = await fetch('/api/questions/update', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ part, topic: selectedTopic, count: questionCounts[part] || 4 })
+          body: JSON.stringify({ part, topic: selectedTopic, count: questionCounts[part] || 4, poolId })
         });
 
         const generateData = await generateResponse.json();

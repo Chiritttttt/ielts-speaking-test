@@ -123,7 +123,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { part, topic, count = 5 } = body;
+    const { part, topic, count = 5, poolId } = body;
 
     if (!process.env.DEEPSEEK_API_KEY) {
       return NextResponse.json({
@@ -145,6 +145,17 @@ export async function PUT(request: NextRequest) {
         success: false,
         error: '无效的题目部分'
       }, { status: 400 });
+    }
+
+    // 确定目标题库：优先使用传入的 poolId，否则使用默认题库
+    let targetPoolId = poolId;
+    if (!targetPoolId) {
+      const defaultPool = await db.questionPool.findFirst({
+        where: { isActive: true, isDefault: true }
+      });
+      if (defaultPool) {
+        targetPoolId = defaultPool.id;
+      }
     }
 
     // 使用带重试的生成函数
@@ -176,7 +187,8 @@ export async function PUT(request: NextRequest) {
             partNumber,
             category: topic,
             questionText: q.question,
-            difficulty
+            difficulty,
+            poolId: targetPoolId // 关联到题库
           }
         });
         savedQuestions.push(saved);
@@ -185,7 +197,25 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    console.log(`[Questions] Generated ${questionsData.questions.length}, saved ${savedQuestions.length} for Part ${partNumber}, topic: ${topic}`);
+    // 更新题库统计
+    if (targetPoolId) {
+      const counts = await db.questionBank.groupBy({
+        by: ['partNumber'],
+        where: { poolId: targetPoolId, isActive: true },
+        _count: true
+      });
+
+      await db.questionPool.update({
+        where: { id: targetPoolId },
+        data: {
+          part1Count: counts.find(c => c.partNumber === 1)?._count || 0,
+          part2Count: counts.find(c => c.partNumber === 2)?._count || 0,
+          part3Count: counts.find(c => c.partNumber === 3)?._count || 0,
+        }
+      });
+    }
+
+    console.log(`[Questions] Generated ${questionsData.questions.length}, saved ${savedQuestions.length} for Part ${partNumber}, topic: ${topic}, poolId: ${targetPoolId}`);
 
     return NextResponse.json({
       success: true,
