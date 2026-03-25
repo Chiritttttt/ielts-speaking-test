@@ -65,6 +65,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { name, description, period, isDefault, source } = body;
 
+    console.log('[Pool] Create request:', { name, description, period, isDefault, source });
+
     if (!name) {
       return NextResponse.json({
         success: false,
@@ -74,31 +76,38 @@ export async function POST(request: NextRequest) {
 
     // 如果设为默认，取消其他默认题库
     if (isDefault) {
-      await db.questionPool.updateMany({
-        where: { isDefault: true },
-        data: { isDefault: false }
-      });
+      try {
+        await db.questionPool.updateMany({
+          where: { isDefault: true },
+          data: { isDefault: false }
+        });
+      } catch (e) {
+        console.log('[Pool] No existing default pool to update');
+      }
     }
 
     const pool = await db.questionPool.create({
       data: {
         name,
-        description,
-        period,
+        description: description || '',
+        period: period || null,
         isDefault: isDefault || false,
         source: source || 'ai'
       }
     });
 
+    console.log('[Pool] Created successfully:', pool.id);
+
     return NextResponse.json({
       success: true,
       pool
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Pool] Create error:', error);
     return NextResponse.json({
       success: false,
-      error: '创建题库失败'
+      error: error.message || '创建题库失败',
+      details: error.code
     }, { status: 500 });
   }
 }

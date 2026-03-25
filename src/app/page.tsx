@@ -5390,7 +5390,9 @@ function AdminView({ onBack }: { onBack: () => void }) {
       return;
     }
 
+    setPoolLoading(true);
     try {
+      console.log('[Pool] Creating pool:', newPoolName.trim());
       const response = await fetch('/api/pool', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -5402,6 +5404,8 @@ function AdminView({ onBack }: { onBack: () => void }) {
       });
 
       const data = await response.json();
+      console.log('[Pool] Create response:', data);
+
       if (data.success) {
         toast.success('题库创建成功');
         setNewPoolName('');
@@ -5410,10 +5414,15 @@ function AdminView({ onBack }: { onBack: () => void }) {
         loadQuestionPools();
       } else {
         toast.error(data.error || '创建失败');
+        if (data.details) {
+          console.error('[Pool] Error details:', data.details);
+        }
       }
-    } catch (error) {
-      toast.error('创建失败');
+    } catch (error: any) {
+      console.error('[Pool] Create error:', error);
+      toast.error('创建失败: ' + (error.message || '网络错误'));
     }
+    setPoolLoading(false);
   };
 
   const setDefaultPool = async (poolId: string) => {
