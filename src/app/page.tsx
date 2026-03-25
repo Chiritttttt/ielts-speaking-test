@@ -2226,7 +2226,7 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
       {/* 底部提示 */}
       <div className="mt-6 text-center text-slate-400 text-xs">
         <p>每天学习一个地道表达，提升雅思口语分数</p>
-        <p className="mt-1">每24小时自动更新</p>
+        <p className="mt-1">每天早上8点更新</p>
       </div>
     </div>
   );

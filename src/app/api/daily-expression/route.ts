@@ -2,13 +2,37 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { callDeepSeek } from '@/lib/deepseek';
 
+// 获取北京时间日期字符串 (YYYY-MM-DD)
+function getBeijingDate(): string {
+  const now = new Date();
+  // 北京时间 = UTC + 8小时
+  const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  return beijingTime.toISOString().split('T')[0];
+}
+
+// 检查是否应该更新（北京时间早上8点后）
+function shouldUpdate(createdAt: Date): boolean {
+  const now = new Date();
+  const beijingNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  
+  // 北京时间今天早上8点
+  const today8AM = new Date(beijingNow);
+  today8AM.setUTCHours(0, 0, 0, 0); // 因为已经是北京时间，所以直接设为0点就是8点UTC
+  
+  // 创建时间转换为北京时间
+  const beijingCreated = new Date(createdAt.getTime() + 8 * 60 * 60 * 1000);
+  
+  // 如果创建时间在今天8点之前，则需要更新
+  return beijingCreated < today8AM;
+}
+
 /**
  * 获取今日地道表达
- * 如果缓存不存在或超过24小时，则调用 AI 生成新的
+ * 每天北京时间早上8点更新
  */
 export async function GET(request: NextRequest) {
   try {
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const today = getBeijingDate();
 
     // 检查今日是否已有缓存
     const existing = await db.dailyExpression.findUnique({
@@ -16,12 +40,8 @@ export async function GET(request: NextRequest) {
     });
 
     if (existing) {
-      // 检查是否超过24小时
-      const createdTime = existing.createdAt.getTime();
-      const now = Date.now();
-      const hoursPassed = (now - createdTime) / (1000 * 60 * 60);
-
-      if (hoursPassed < 24) {
+      // 检查是否需要更新（早上8点后）
+      if (!shouldUpdate(existing.createdAt)) {
         return NextResponse.json({
           success: true,
           expression: existing,
