@@ -7,7 +7,8 @@ import {
   BarChart3, TrendingUp, BookOpen, Award, Clock, Target, Lightbulb,
   Volume2, CheckCircle2, AlertCircle, Loader2, History, User, Star,
   ArrowRight, RefreshCw, Download, Share2, Database, Plus, Sparkles,
-  Eye, Trash2, X, LogOut, Upload, MessageCircle, Shield, Pencil, Languages
+  Eye, Trash2, X, LogOut, Upload, MessageCircle, Shield, Pencil, Languages,
+  Key, Users, Check, Copy
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -1392,7 +1393,7 @@ export default function IELTSSpeakingApp() {
                         ? 'text-white bg-white/20'
                         : 'text-white/70 hover:text-white hover:bg-white/10'
                     }`}
-                    title="公告管理"
+                    title="管理后台"
                   >
                     <Shield className="w-4 h-4" />
                   </button>
@@ -5057,10 +5058,15 @@ function SettingsView({ settings, updateSetting, user }: {
   );
 }
 
-// Admin View - 公告管理
+// Admin View - 综合管理后台
+type AdminTabType = 'announcements' | 'invites' | 'users';
+
 function AdminView({ onBack }: { onBack: () => void }) {
+  const [activeTab, setActiveTab] = useState<AdminTabType>('announcements');
+
+  // ===== 公告管理状态 =====
   const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [announcementLoading, setAnnouncementLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: '',
@@ -5070,9 +5076,31 @@ function AdminView({ onBack }: { onBack: () => void }) {
     priority: 0
   });
 
-  // 获取所有公告
+  // ===== 邀请码管理状态 =====
+  const [inviteCodes, setInviteCodes] = useState<any[]>([]);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [createCount, setCreateCount] = useState(1);
+  const [createMaxUses, setCreateMaxUses] = useState(1);
+  const [createExpiresInDays, setCreateExpiresInDays] = useState<number | ''>('');
+
+  // ===== 用户管理状态 =====
+  const [users, setUsers] = useState<any[]>([]);
+  const [userLoading, setUserLoading] = useState(false);
+  const [userFilter, setUserFilter] = useState<string>('pending');
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [showUserDialog, setShowUserDialog] = useState(false);
+
+  // ===== 初始化加载 =====
+  useEffect(() => {
+    fetchAnnouncements();
+    loadInviteCodes();
+    loadUsers(userFilter);
+  }, []);
+
+  // ===== 公告管理函数 =====
   const fetchAnnouncements = async () => {
-    setLoading(true);
+    setAnnouncementLoading(true);
     try {
       const response = await fetch('/api/announcement?all=true');
       const data = await response.json();
@@ -5082,14 +5110,9 @@ function AdminView({ onBack }: { onBack: () => void }) {
     } catch (error) {
       toast.error('获取公告失败');
     }
-    setLoading(false);
+    setAnnouncementLoading(false);
   };
 
-  useEffect(() => {
-    fetchAnnouncements();
-  }, []);
-
-  // 创建或更新公告
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title || !formData.content) {
@@ -5122,8 +5145,7 @@ function AdminView({ onBack }: { onBack: () => void }) {
     }
   };
 
-  // 删除公告
-  const handleDelete = async (id: string) => {
+  const handleDeleteAnnouncement = async (id: string) => {
     if (!confirm('确定删除此公告？')) return;
 
     try {
@@ -5140,7 +5162,6 @@ function AdminView({ onBack }: { onBack: () => void }) {
     }
   };
 
-  // 编辑公告
   const handleEdit = (announcement: any) => {
     setEditingId(announcement.id);
     setFormData({
@@ -5152,7 +5173,6 @@ function AdminView({ onBack }: { onBack: () => void }) {
     });
   };
 
-  // 取消编辑
   const handleCancel = () => {
     setEditingId(null);
     setFormData({ title: '', content: '', type: 'info', isActive: true, priority: 0 });
@@ -5165,146 +5185,757 @@ function AdminView({ onBack }: { onBack: () => void }) {
     { value: 'maintenance', label: '维护通知', color: 'bg-red-50 border-red-200' }
   ];
 
+  // ===== 邀请码管理函数 =====
+  const loadInviteCodes = async () => {
+    setInviteLoading(true);
+    try {
+      const response = await fetch('/api/invite');
+      const data = await response.json();
+      if (data.success) {
+        setInviteCodes(data.codes);
+      }
+    } catch (error) {
+      console.error('Load invite codes error:', error);
+    }
+    setInviteLoading(false);
+  };
+
+  const createInviteCodes = async () => {
+    try {
+      const response = await fetch('/api/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          count: createCount,
+          maxUses: createMaxUses,
+          expiresInDays: createExpiresInDays || undefined
+        })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success(data.message);
+        setShowCreateDialog(false);
+        setCreateCount(1);
+        setCreateMaxUses(1);
+        setCreateExpiresInDays('');
+        loadInviteCodes();
+      } else {
+        toast.error(data.error || '创建失败');
+      }
+    } catch (error) {
+      toast.error('创建失败');
+    }
+  };
+
+  const deleteInviteCode = async (id: string) => {
+    if (!confirm('确定要删除这个邀请码吗？')) return;
+
+    try {
+      const response = await fetch('/api/invite', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('删除成功');
+        loadInviteCodes();
+      } else {
+        toast.error(data.error || '删除失败');
+      }
+    } catch (error) {
+      toast.error('删除失败');
+    }
+  };
+
+  const copyInviteCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    toast.success('已复制到剪贴板');
+  };
+
+  // ===== 用户管理函数 =====
+  const loadUsers = async (status?: string) => {
+    setUserLoading(true);
+    try {
+      const url = status && status !== 'all'
+        ? `/api/admin/users?status=${status}`
+        : '/api/admin/users';
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.success) {
+        setUsers(data.users);
+      }
+    } catch (error) {
+      console.error('Load users error:', error);
+    }
+    setUserLoading(false);
+  };
+
+  const approveUser = async (userId: string) => {
+    try {
+      const response = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, status: 'approved' })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('已批准用户');
+        loadUsers(userFilter === 'all' ? undefined : userFilter);
+        setShowUserDialog(false);
+      } else {
+        toast.error(data.error || '操作失败');
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    }
+  };
+
+  const rejectUser = async (userId: string) => {
+    try {
+      const response = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, status: 'rejected' })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('已拒绝用户');
+        loadUsers(userFilter === 'all' ? undefined : userFilter);
+        setShowUserDialog(false);
+      } else {
+        toast.error(data.error || '操作失败');
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    }
+  };
+
+  const suspendUser = async (userId: string) => {
+    if (!confirm('确定要禁用该用户吗？')) return;
+
+    try {
+      const response = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, status: 'suspended' })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('已禁用用户');
+        loadUsers(userFilter === 'all' ? undefined : userFilter);
+        setShowUserDialog(false);
+      } else {
+        toast.error(data.error || '操作失败');
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    }
+  };
+
+  const deleteUser = async (userId: string) => {
+    if (!confirm('确定要删除该用户吗？此操作不可恢复！')) return;
+
+    try {
+      const response = await fetch('/api/admin/users', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('用户已删除');
+        loadUsers(userFilter === 'all' ? undefined : userFilter);
+        setShowUserDialog(false);
+      } else {
+        toast.error(data.error || '操作失败');
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    }
+  };
+
+  // ===== 格式化函数 =====
+  const formatDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return '-';
+    return new Date(dateStr).toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getStatusBadge = (status: string) => {
+    const styles: Record<string, string> = {
+      pending: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      approved: 'bg-green-100 text-green-800 border-green-200',
+      rejected: 'bg-red-100 text-red-800 border-red-200',
+      suspended: 'bg-gray-100 text-gray-800 border-gray-200',
+      active: 'bg-green-100 text-green-800 border-green-200',
+      used: 'bg-gray-100 text-gray-800 border-gray-200',
+      disabled: 'bg-red-100 text-red-800 border-red-200'
+    };
+    const labels: Record<string, string> = {
+      pending: '待审批',
+      approved: '已批准',
+      rejected: '已拒绝',
+      suspended: '已禁用',
+      active: '可用',
+      used: '已使用',
+      disabled: '已禁用'
+    };
+    return (
+      <Badge className={styles[status] || 'bg-gray-100 text-gray-800'}>
+        {labels[status] || status}
+      </Badge>
+    );
+  };
+
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* 顶部导航 */}
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">公告管理</h2>
+        <div className="flex items-center gap-3">
+          <Shield className="w-6 h-6 text-[#E31837]" />
+          <h2 className="text-2xl font-bold">管理后台</h2>
+        </div>
         <Button variant="outline" onClick={onBack}>
+          <ChevronLeft className="w-4 h-4 mr-1" />
           返回
         </Button>
       </div>
 
-      {/* 创建/编辑公告 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>{editingId ? '编辑公告' : '发布新公告'}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label className="text-sm font-medium">标题</Label>
-              <Input
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                placeholder="公告标题（可选）"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label className="text-sm font-medium">内容 *</Label>
-              <textarea
-                value={formData.content}
-                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                placeholder="公告内容..."
-                className="mt-1 w-full min-h-[80px] p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                required
-              />
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label className="text-sm font-medium">类型</Label>
-                <select
-                  value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                  className="mt-1 w-full p-2 border border-slate-200 rounded-lg text-sm"
-                >
-                  {typeOptions.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label className="text-sm font-medium">优先级</Label>
-                <Input
-                  type="number"
-                  value={formData.priority}
-                  onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 0 })}
-                  placeholder="0"
-                  className="mt-1"
-                />
-              </div>
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.isActive}
-                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm">启用</span>
-                </label>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button type="submit" className="bg-[#E31837] hover:bg-[#C4142D]">
-                {editingId ? '更新公告' : '发布公告'}
-              </Button>
-              {editingId && (
-                <Button type="button" variant="outline" onClick={handleCancel}>
-                  取消
-                </Button>
-              )}
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+      {/* Tab 切换 */}
+      <div className="flex gap-2 bg-slate-100 p-1 rounded-lg">
+        <button
+          onClick={() => setActiveTab('announcements')}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+            activeTab === 'announcements' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <MessageCircle className="w-4 h-4" />
+          公告管理
+        </button>
+        <button
+          onClick={() => setActiveTab('invites')}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+            activeTab === 'invites' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Key className="w-4 h-4" />
+          邀请码
+        </button>
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+            activeTab === 'users' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          用户审批
+        </button>
+      </div>
 
-      {/* 公告列表 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>已有公告 ({announcements.length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="text-center py-8 text-slate-500">
-              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-              加载中...
-            </div>
-          ) : announcements.length === 0 ? (
-            <div className="text-center py-8 text-slate-500">
-              暂无公告
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {announcements.map((a) => (
-                <div
-                  key={a.id}
-                  className={`p-4 rounded-lg border ${
-                    typeOptions.find(t => t.value === a.type)?.color || 'bg-slate-50'
-                  } ${!a.isActive ? 'opacity-50' : ''}`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        {a.title && <span className="font-medium">{a.title}</span>}
-                        <Badge variant="outline" className="text-xs">
-                          {typeOptions.find(t => t.value === a.type)?.label}
-                        </Badge>
-                        {!a.isActive && (
-                          <Badge variant="outline" className="text-xs bg-slate-100">已禁用</Badge>
-                        )}
-                        <span className="text-xs text-slate-400">优先级: {a.priority}</span>
-                      </div>
-                      <p className="text-sm">{a.content}</p>
-                      <p className="text-xs text-slate-400 mt-1">
-                        {new Date(a.createdAt).toLocaleString('zh-CN')}
-                      </p>
-                    </div>
-                    <div className="flex gap-1 ml-2">
-                      <Button size="sm" variant="ghost" onClick={() => handleEdit(a)}>
-                        <Pencil className="w-4 h-4" />
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleDelete(a.id)} className="text-red-500 hover:text-red-700">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
+      {/* ===== 公告管理 Tab ===== */}
+      {activeTab === 'announcements' && (
+        <>
+          {/* 创建/编辑公告 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>{editingId ? '编辑公告' : '发布新公告'}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <Label className="text-sm font-medium">标题</Label>
+                  <Input
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    placeholder="公告标题（可选）"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm font-medium">内容 *</Label>
+                  <textarea
+                    value={formData.content}
+                    onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                    placeholder="公告内容..."
+                    className="mt-1 w-full min-h-[80px] p-3 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label className="text-sm font-medium">类型</Label>
+                    <select
+                      value={formData.type}
+                      onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                      className="mt-1 w-full p-2 border border-slate-200 rounded-lg text-sm"
+                    >
+                      {typeOptions.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-sm font-medium">优先级</Label>
+                    <Input
+                      type="number"
+                      value={formData.priority}
+                      onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value) || 0 })}
+                      placeholder="0"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.isActive}
+                        onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                        className="w-4 h-4"
+                      />
+                      <span className="text-sm">启用</span>
+                    </label>
                   </div>
                 </div>
-              ))}
+                <div className="flex gap-2">
+                  <Button type="submit" className="bg-[#E31837] hover:bg-[#C4142D]">
+                    {editingId ? '更新公告' : '发布公告'}
+                  </Button>
+                  {editingId && (
+                    <Button type="button" variant="outline" onClick={handleCancel}>
+                      取消
+                    </Button>
+                  )}
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+
+          {/* 公告列表 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>已有公告 ({announcements.length})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {announcementLoading ? (
+                <div className="text-center py-8 text-slate-500">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                  加载中...
+                </div>
+              ) : announcements.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  暂无公告
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {announcements.map((a) => (
+                    <div
+                      key={a.id}
+                      className={`p-4 rounded-lg border ${
+                        typeOptions.find(t => t.value === a.type)?.color || 'bg-slate-50'
+                      } ${!a.isActive ? 'opacity-50' : ''}`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            {a.title && <span className="font-medium">{a.title}</span>}
+                            <Badge variant="outline" className="text-xs">
+                              {typeOptions.find(t => t.value === a.type)?.label}
+                            </Badge>
+                            {!a.isActive && (
+                              <Badge variant="outline" className="text-xs bg-slate-100">已禁用</Badge>
+                            )}
+                            <span className="text-xs text-slate-400">优先级: {a.priority}</span>
+                          </div>
+                          <p className="text-sm">{a.content}</p>
+                          <p className="text-xs text-slate-400 mt-1">
+                            {new Date(a.createdAt).toLocaleString('zh-CN')}
+                          </p>
+                        </div>
+                        <div className="flex gap-1 ml-2">
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(a)}>
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleDeleteAnnouncement(a.id)} className="text-red-500 hover:text-red-700">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {/* ===== 邀请码管理 Tab ===== */}
+      {activeTab === 'invites' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">邀请码管理</h3>
+              <p className="text-sm text-slate-500">创建和管理邀请码，控制用户注册</p>
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={loadInviteCodes}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                刷新
+              </Button>
+              <Button onClick={() => setShowCreateDialog(true)} className="bg-[#E31837] hover:bg-[#C4142D]">
+                <Plus className="w-4 h-4 mr-2" />
+                创建邀请码
+              </Button>
+            </div>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">邀请码列表</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {inviteLoading ? (
+                <div className="text-center py-8 text-slate-500">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                  加载中...
+                </div>
+              ) : inviteCodes.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <Key className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>暂无邀请码</p>
+                  <p className="text-sm mt-1">点击上方按钮创建邀请码</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <div className="space-y-3">
+                    {inviteCodes.map((code) => (
+                      <div
+                        key={code.id}
+                        className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <code className="px-3 py-1.5 bg-slate-100 rounded-md font-mono text-sm font-semibold text-slate-800">
+                              {code.code}
+                            </code>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => copyInviteCode(code.code)}
+                            >
+                              <Copy className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          {getStatusBadge(code.status)}
+                        </div>
+                        <div className="flex items-center gap-6 text-sm text-slate-600">
+                          <div className="text-center">
+                            <p className="text-xs text-slate-400">使用次数</p>
+                            <p className="font-medium">{code.usedCount}/{code.maxUses}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-slate-400">创建时间</p>
+                            <p className="font-medium">{formatDate(code.createdAt)}</p>
+                          </div>
+                          {code.expiresAt && (
+                            <div className="text-center">
+                              <p className="text-xs text-slate-400">过期时间</p>
+                              <p className="font-medium">{formatDate(code.expiresAt)}</p>
+                            </div>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => deleteInviteCode(code.id)}
+                            disabled={code.status === 'used'}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 创建邀请码对话框 */}
+          <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>创建邀请码</DialogTitle>
+                <DialogDescription>批量创建邀请码，用于控制用户注册</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>创建数量</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={createCount}
+                    onChange={(e) => setCreateCount(parseInt(e.target.value) || 1)}
+                  />
+                  <p className="text-xs text-slate-500">一次最多创建 100 个邀请码</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>每个邀请码可使用次数</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={createMaxUses}
+                    onChange={(e) => setCreateMaxUses(parseInt(e.target.value) || 1)}
+                  />
+                  <p className="text-xs text-slate-500">默认每个邀请码只能使用一次</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>有效期（天）</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder="留空表示永久有效"
+                    value={createExpiresInDays}
+                    onChange={(e) => setCreateExpiresInDays(e.target.value ? parseInt(e.target.value) : '')}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+                  取消
+                </Button>
+                <Button onClick={createInviteCodes} className="bg-[#E31837] hover:bg-[#C4142D]">
+                  创建
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
+
+      {/* ===== 用户审批 Tab ===== */}
+      {activeTab === 'users' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">用户管理</h3>
+              <p className="text-sm text-slate-500">审批新用户注册，管理用户权限</p>
+            </div>
+            <div className="flex gap-2">
+              <select
+                value={userFilter}
+                onChange={(e) => {
+                  setUserFilter(e.target.value);
+                  loadUsers(e.target.value === 'all' ? undefined : e.target.value);
+                }}
+                className="px-3 py-2 border border-slate-200 rounded-md text-sm bg-white"
+              >
+                <option value="pending">待审批</option>
+                <option value="approved">已批准</option>
+                <option value="rejected">已拒绝</option>
+                <option value="suspended">已禁用</option>
+                <option value="all">全部用户</option>
+              </select>
+              <Button variant="outline" size="sm" onClick={() => loadUsers(userFilter === 'all' ? undefined : userFilter)}>
+                <RefreshCw className="w-4 h-4 mr-2" />
+                刷新
+              </Button>
+            </div>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">用户列表</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {userLoading ? (
+                <div className="text-center py-8 text-slate-500">
+                  <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                  加载中...
+                </div>
+              ) : users.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>暂无用户</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <div className="space-y-3">
+                    {users.map((user) => (
+                      <div
+                        key={user.id}
+                        className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors cursor-pointer"
+                        onClick={() => {
+                          setSelectedUser(user);
+                          setShowUserDialog(true);
+                        }}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
+                            <span className="text-sm font-medium text-slate-600">
+                              {(user.name || user.username)?.charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="font-medium text-slate-800">{user.name || user.username}</p>
+                            <p className="text-sm text-slate-500">@{user.username}</p>
+                          </div>
+                          {getStatusBadge(user.status)}
+                        </div>
+                        <div className="flex items-center gap-6 text-sm text-slate-600">
+                          <div className="text-center">
+                            <p className="text-xs text-slate-400">测试次数</p>
+                            <p className="font-medium">{user.testCount}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-xs text-slate-400">注册时间</p>
+                            <p className="font-medium">{formatDate(user.createdAt)}</p>
+                          </div>
+                          {user.status === 'pending' && (
+                            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700"
+                                onClick={() => approveUser(user.id)}
+                              >
+                                <Check className="w-4 h-4 mr-1" />
+                                批准
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-red-200 text-red-600 hover:bg-red-50"
+                                onClick={() => rejectUser(user.id)}
+                              >
+                                <X className="w-4 h-4 mr-1" />
+                                拒绝
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 用户详情对话框 */}
+          <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>用户详情</DialogTitle>
+              </DialogHeader>
+              {selectedUser && (
+                <div className="space-y-4 py-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-full bg-slate-200 flex items-center justify-center">
+                      <span className="text-2xl font-medium text-slate-600">
+                        {(selectedUser.name || selectedUser.username)?.charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-lg font-semibold text-slate-800">
+                        {selectedUser.name || selectedUser.username}
+                      </p>
+                      <p className="text-slate-500">@{selectedUser.username}</p>
+                      {getStatusBadge(selectedUser.status)}
+                    </div>
+                  </div>
+                  <hr className="border-slate-200" />
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-slate-500">邮箱</p>
+                      <p className="font-medium">{selectedUser.email || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">角色</p>
+                      <p className="font-medium">{selectedUser.role === 'admin' ? '管理员' : '普通用户'}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">注册时间</p>
+                      <p className="font-medium">{formatDate(selectedUser.createdAt)}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">测试次数</p>
+                      <p className="font-medium">{selectedUser.testCount}</p>
+                    </div>
+                  </div>
+                  <hr className="border-slate-200" />
+                  <div className="flex items-center gap-2">
+                    {selectedUser.status === 'pending' && (
+                      <>
+                        <Button
+                          className="flex-1 bg-green-600 hover:bg-green-700"
+                          onClick={() => approveUser(selectedUser.id)}
+                        >
+                          <Check className="w-4 h-4 mr-2" />
+                          批准用户
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="flex-1 border-red-200 text-red-600 hover:bg-red-50"
+                          onClick={() => rejectUser(selectedUser.id)}
+                        >
+                          <X className="w-4 h-4 mr-2" />
+                          拒绝
+                        </Button>
+                      </>
+                    )}
+                    {selectedUser.status === 'approved' && (
+                      <Button
+                        variant="outline"
+                        className="flex-1 border-orange-200 text-orange-600 hover:bg-orange-50"
+                        onClick={() => suspendUser(selectedUser.id)}
+                      >
+                        禁用用户
+                      </Button>
+                    )}
+                    {selectedUser.status === 'suspended' && (
+                      <Button
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                        onClick={() => approveUser(selectedUser.id)}
+                      >
+                        <Check className="w-4 h-4 mr-2" />
+                        解除禁用
+                      </Button>
+                    )}
+                    {selectedUser.status === 'rejected' && (
+                      <Button
+                        className="flex-1 bg-green-600 hover:bg-green-700"
+                        onClick={() => approveUser(selectedUser.id)}
+                      >
+                        <Check className="w-4 h-4 mr-2" />
+                        批准用户
+                      </Button>
+                    )}
+                    {selectedUser.role !== 'admin' && (
+                      <Button
+                        variant="outline"
+                        className="border-red-200 text-red-600 hover:bg-red-50"
+                        onClick={() => deleteUser(selectedUser.id)}
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        删除
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
     </div>
   );
 }
