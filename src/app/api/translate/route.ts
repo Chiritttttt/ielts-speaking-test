@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callDeepSeek } from '@/lib/deepseek';
+import { recordApiUsage } from '@/lib/usage';
 
 /**
  * 翻译 API - 英文翻译成中文，按需调用，精简 prompt 节省 token
@@ -16,9 +17,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (!process.env.DEEPSEEK_API_KEY) {
+      console.error('[Translate] DEEPSEEK_API_KEY not configured');
       return NextResponse.json({
         success: false,
-        error: 'API 未配置'
+        error: '翻译服务未配置'
       }, { status: 503 });
     }
 
@@ -43,9 +45,11 @@ Text: "${text}"`;
     ], { temperature: 0.2, max_tokens: 1000 });
 
     if (!result.success) {
+      console.error('[Translate] DeepSeek error:', result.error);
+      recordApiUsage('deepseek', 'translate', { success: false });
       return NextResponse.json({
         success: false,
-        error: result.error || '翻译失败'
+        error: result.error || '翻译服务暂时不可用'
       }, { status: 500 });
     }
 
@@ -60,7 +64,29 @@ Text: "${text}"`;
       jsonStr = jsonMatch[0];
     }
 
-    const data = JSON.parse(jsonStr);
+    let data;
+    try {
+      data = JSON.parse(jsonStr);
+    } catch (parseError) {
+      console.error('[Translate] JSON parse error:', parseError, 'Content:', jsonStr.substring(0, 200));
+      recordApiUsage('deepseek', 'translate', { success: false });
+      return NextResponse.json({
+        success: false,
+        error: '翻译结果解析失败'
+      }, { status: 500 });
+    }
+
+    if (!data.translation) {
+      console.error('[Translate] No translation in response:', data);
+      recordApiUsage('deepseek', 'translate', { success: false });
+      return NextResponse.json({
+        success: false,
+        error: '翻译结果格式错误'
+      }, { status: 500 });
+    }
+
+    // 记录成功调用
+    recordApiUsage('deepseek', 'translate', { success: true });
 
     return NextResponse.json({
       success: true,
