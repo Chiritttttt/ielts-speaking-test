@@ -12,21 +12,6 @@ function generateInviteCode(): string {
   return code;
 }
 
-// 计算邀请码是否过期
-function isCodeExpired(code: { validDays: number | null; firstUsedAt: Date | null; expiresAt: Date | null }): { expired: boolean; expiresAt: Date | null } {
-  // 新逻辑：从首次使用开始计算
-  if (code.validDays && code.firstUsedAt) {
-    const expiresAt = new Date(code.firstUsedAt.getTime() + code.validDays * 24 * 60 * 60 * 1000);
-    return { expired: new Date() > expiresAt, expiresAt };
-  }
-  // 兼容旧逻辑：创建时设置的过期时间
-  if (code.expiresAt) {
-    return { expired: new Date() > code.expiresAt, expiresAt: code.expiresAt };
-  }
-  // 永不过期
-  return { expired: false, expiresAt: null };
-}
-
 // GET - 获取所有邀请码（管理员）
 export async function GET(request: NextRequest) {
   try {
@@ -44,22 +29,16 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      codes: codes.map(c => {
-        const { expired, expiresAt } = isCodeExpired(c);
-        return {
-          id: c.id,
-          code: c.code,
-          status: c.status,
-          maxUses: c.maxUses,
-          usedCount: c.usedCount,
-          validDays: c.validDays,
-          firstUsedAt: c.firstUsedAt?.toISOString(),
-          expiresAt: expiresAt?.toISOString(),
-          createdAt: c.createdAt.toISOString(),
-          createdBy: c.createdBy,
-          expired // 是否已过期
-        };
-      })
+      codes: codes.map(c => ({
+        id: c.id,
+        code: c.code,
+        status: c.status,
+        maxUses: c.maxUses,
+        usedCount: c.usedCount,
+        validDays: c.validDays,
+        createdAt: c.createdAt.toISOString(),
+        createdBy: c.createdBy
+      }))
     });
   } catch (error) {
     console.error('Get invite codes error:', error);
@@ -90,7 +69,7 @@ export async function POST(request: NextRequest) {
         data: {
           code: codeStr,
           maxUses,
-          validDays: validDays || null, // 有效天数，null 表示永不过期
+          validDays: validDays || null, // 每个用户的有效天数，null 表示永不过期
           createdById: user.id
         }
       });

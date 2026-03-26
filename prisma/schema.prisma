@@ -16,8 +16,10 @@ model User {
   avatar       String?
   level        String          @default("intermediate")
   role         String          @default("user") // user, admin
-  status       String          @default("pending") // pending, approved, rejected, suspended
+  status       String          @default("pending") // pending, approved, rejected, suspended, expired
   invitedBy    String?         // 邀请人 ID
+  activatedAt  DateTime?       // 激活时间（注册时间）
+  expiresAt    DateTime?       // 过期时间（激活时间 + 邀请码有效天数）
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   testSessions TestSession[]
@@ -43,12 +45,8 @@ model InviteCode {
   status      String    @default("active") // active, used, disabled
   maxUses     Int       @default(1) // 最大使用次数
   usedCount   Int       @default(0) // 已使用次数
-  validDays   Int?      // 有效天数，从首次使用开始计算，null 表示永不过期
-  firstUsedAt DateTime? // 首次使用时间，用于计算过期
-  expiresAt   DateTime? // 过期时间（废弃，保留兼容）
+  validDays   Int?      // 每个用户的有效天数，从用户激活时开始计算，null 表示永不过期
   createdById String    // 创建者 ID
-  usedBy      String?   // 使用者 ID（废弃）
-  usedAt      DateTime? // 使用时间（废弃）
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   createdBy   User      @relation("InviterCodes", fields: [createdById], references: [id])

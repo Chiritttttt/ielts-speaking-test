@@ -28,6 +28,8 @@ export async function GET(request: NextRequest) {
         role: true,
         status: true,
         createdAt: true,
+        activatedAt: true,
+        expiresAt: true,
         invitedBy: true,
         _count: {
           select: { testSessions: true }
@@ -41,6 +43,8 @@ export async function GET(request: NextRequest) {
       users: users.map(u => ({
         ...u,
         createdAt: u.createdAt.toISOString(),
+        activatedAt: u.activatedAt?.toISOString(),
+        expiresAt: u.expiresAt?.toISOString(),
         testCount: u._count.testSessions
       }))
     });

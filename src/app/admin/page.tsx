@@ -26,9 +26,6 @@ interface InviteCode {
   maxUses: number;
   usedCount: number;
   validDays: number | null;
-  firstUsedAt: string | null;
-  expiresAt: string | null;
-  expired: boolean;
   createdAt: string;
   createdBy?: { id: string; username: string; name?: string };
 }
@@ -41,6 +38,8 @@ interface User {
   role: string;
   status: string;
   createdAt: string;
+  activatedAt?: string;
+  expiresAt?: string;
   testCount: number;
 }
 
@@ -451,7 +450,7 @@ export default function AdminPage() {
                                 <Copy className="w-4 h-4" />
                               </Button>
                             </div>
-                            {getStatusBadge(code.expired ? 'expired' : code.status)}
+                            {getStatusBadge(code.status)}
                           </div>
 
                           <div className="flex items-center gap-6 text-sm text-slate-600">
@@ -460,21 +459,9 @@ export default function AdminPage() {
                               <p className="font-medium">{code.usedCount}/{code.maxUses}</p>
                             </div>
                             <div className="text-center">
-                              <p className="text-xs text-slate-400">有效天数</p>
+                              <p className="text-xs text-slate-400">每人有效天数</p>
                               <p className="font-medium">{code.validDays || '永久'}</p>
                             </div>
-                            {code.firstUsedAt && (
-                              <div className="text-center">
-                                <p className="text-xs text-slate-400">首次使用</p>
-                                <p className="font-medium">{formatDate(code.firstUsedAt)}</p>
-                              </div>
-                            )}
-                            {code.expiresAt && (
-                              <div className="text-center">
-                                <p className="text-xs text-slate-400">过期时间</p>
-                                <p className={`font-medium ${code.expired ? 'text-red-500' : ''}`}>{formatDate(code.expiresAt)}</p>
-                              </div>
-                            )}
                             <Button
                               variant="ghost"
                               size="icon"
@@ -655,7 +642,7 @@ export default function AdminPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="expires">有效天数</Label>
+              <Label htmlFor="expires">每人有效天数</Label>
               <Input
                 id="expires"
                 type="number"
@@ -664,7 +651,7 @@ export default function AdminPage() {
                 value={createValidDays}
                 onChange={(e) => setCreateValidDays(e.target.value ? parseInt(e.target.value) : '')}
               />
-              <p className="text-xs text-slate-500">从首次使用开始计算有效期</p>
+              <p className="text-xs text-slate-500">每个用户从激活时开始计算有效期</p>
             </div>
           </div>
 
@@ -720,6 +707,14 @@ export default function AdminPage() {
                 <div>
                   <p className="text-slate-500">注册时间</p>
                   <p className="font-medium">{formatDate(selectedUser.createdAt)}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">激活时间</p>
+                  <p className="font-medium">{formatDate(selectedUser.activatedAt)}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">过期时间</p>
+                  <p className={`font-medium ${selectedUser.expiresAt && new Date(selectedUser.expiresAt) < new Date() ? 'text-red-500' : ''}`}>{formatDate(selectedUser.expiresAt)}</p>
                 </div>
                 <div>
                   <p className="text-slate-500">测试次数</p>

@@ -2,21 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { hashPassword, generateToken, setAuthCookie } from '@/lib/auth';
 
-// 计算邀请码是否过期
-function isCodeExpired(code: { validDays: number | null; firstUsedAt: Date | null; expiresAt: Date | null }): boolean {
-  // 新逻辑：从首次使用开始计算
-  if (code.validDays && code.firstUsedAt) {
-    const expiresAt = new Date(code.firstUsedAt.getTime() + code.validDays * 24 * 60 * 60 * 1000);
-    return new Date() > expiresAt;
-  }
-  // 兼容旧逻辑：创建时设置的过期时间
-  if (code.expiresAt) {
-    return new Date() > code.expiresAt;
-  }
-  // 永不过期
-  return false;
-}
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -122,14 +107,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 使用新的过期检查逻辑
-    if (isCodeExpired(code)) {
-      return NextResponse.json({
-        success: false,
-        error: '邀请码已过期'
-      }, { status: 400 });
-    }
-
+    // 检查使用次数
     if (code.usedCount >= code.maxUses) {
       return NextResponse.json({
         success: false,
@@ -149,6 +127,13 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // 计算用户过期时间
+    const activatedAt = new Date();
+    let expiresAt: Date | null = null;
+    if (code.validDays) {
+      expiresAt = new Date(activatedAt.getTime() + code.validDays * 24 * 60 * 60 * 1000);
+    }
+
     // 创建用户（邀请码注册直接通过，无需审批）
     const hashedPassword = await hashPassword(password);
     const user = await db.user.create({
@@ -159,17 +144,18 @@ export async function POST(request: NextRequest) {
         level: 'intermediate',
         role: 'user',
         status: 'approved', // 邀请码注册直接通过
-        invitedBy: code.createdById
+        invitedBy: code.createdById,
+        activatedAt,
+        expiresAt
       }
     });
 
-    // 更新邀请码使用情况（首次使用时设置 firstUsedAt）
+    // 更新邀请码使用次数
     const newUsedCount = code.usedCount + 1;
     await db.inviteCode.update({
       where: { id: code.id },
       data: {
         usedCount: { increment: 1 },
-        firstUsedAt: code.firstUsedAt || new Date(), // 首次使用时设置
         status: newUsedCount >= code.maxUses ? 'used' : 'active'
       }
     });
@@ -194,6 +180,8 @@ export async function POST(request: NextRequest) {
         name: user.name,
         status: user.status,
         level: user.level,
+        activatedAt: user.activatedAt?.toISOString(),
+        expiresAt: user.expiresAt?.toISOString(),
         createdAt: user.createdAt.toISOString()
       }
     });
