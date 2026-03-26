@@ -24,21 +24,10 @@ export async function POST(request: NextRequest) {
       }, { status: 503 });
     }
 
-    // 根据类型选择不同的翻译风格
-    let prompt: string;
-    if (type === 'modelAnswer') {
-      // 模型答案翻译 - 保留口语化风格
-      prompt = `Translate this IELTS model answer to Chinese. Keep natural spoken style.
-{"translation": "<中文翻译>"}
-
-Text: "${text}"`;
-    } else {
-      // 用户回答翻译 - 直译为主
-      prompt = `Translate to Chinese. Return JSON only:
-{"translation": "<中文翻译>"}
-
-Text: "${text}"`;
-    }
+    // 简化的翻译提示词
+    const prompt = type === 'modelAnswer'
+      ? `Translate this IELTS model answer to Chinese. Keep natural spoken style. Return translation only, no explanation:\n\n"${text}"`
+      : `Translate to Chinese. Return translation only:\n\n"${text}"`;
 
     const result = await callDeepSeek([
       { role: 'user', content: prompt }
@@ -53,44 +42,22 @@ Text: "${text}"`;
       }, { status: 500 });
     }
 
-    // 解析 JSON
-    let jsonStr = result.content!
-      .replace(/```json\n?/g, '')
-      .replace(/```\n?/g, '')
+    // 获取翻译结果
+    let translation = result.content!.trim();
+    
+    // 清理可能的格式标记
+    translation = translation
+      .replace(/^["'""]+|["'""]+$/g, '')  // 移除开头结尾的引号
+      .replace(/^翻译[：:]\s*/i, '')       // 移除"翻译："前缀
+      .replace(/^Translation[：:]\s*/i, '') // 移除"Translation:"前缀
       .trim();
-
-    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      jsonStr = jsonMatch[0];
-    }
-
-    let data;
-    try {
-      data = JSON.parse(jsonStr);
-    } catch (parseError) {
-      console.error('[Translate] JSON parse error:', parseError, 'Content:', jsonStr.substring(0, 200));
-      recordApiUsage('deepseek', 'translate', { success: false });
-      return NextResponse.json({
-        success: false,
-        error: '翻译结果解析失败'
-      }, { status: 500 });
-    }
-
-    if (!data.translation) {
-      console.error('[Translate] No translation in response:', data);
-      recordApiUsage('deepseek', 'translate', { success: false });
-      return NextResponse.json({
-        success: false,
-        error: '翻译结果格式错误'
-      }, { status: 500 });
-    }
 
     // 记录成功调用
     recordApiUsage('deepseek', 'translate', { success: true });
 
     return NextResponse.json({
       success: true,
-      translation: data.translation
+      translation
     });
 
   } catch (error) {
