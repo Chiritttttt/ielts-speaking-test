@@ -9,7 +9,7 @@ function getBeijingDate(): string {
 
 // API 类型
 export type ApiType = 'deepseek' | 'whisper' | 'tts';
-export type ApiAction = 'evaluate' | 'translate' | 'generate' | 'transcribe' | 'daily_expr' | 'grammar_fix';
+export type ApiAction = 'evaluate' | 'translate' | 'generate' | 'transcribe' | 'daily_expr' | 'grammar_fix' | 'synthesize';
 
 /**
  * 记录 API 调用
