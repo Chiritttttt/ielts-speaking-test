@@ -69,7 +69,9 @@ export async function POST(request: NextRequest) {
         level: user.level,
         role: user.role,
         status: user.status,
-        createdAt: user.createdAt.toISOString()
+        createdAt: user.createdAt.toISOString(),
+        activatedAt: user.activatedAt?.toISOString(),
+        expiresAt: user.expiresAt?.toISOString()
       }
     });
     

@@ -1236,8 +1236,12 @@ export default function IELTSSpeakingApp() {
           username: data.user.username,
           name: data.user.name,
           level: data.user.level,
+          role: data.user.role,
+          status: data.user.status,
           isLoggedIn: true,
-          createdAt: data.user.createdAt || new Date().toISOString()
+          createdAt: data.user.createdAt || new Date().toISOString(),
+          activatedAt: data.user.activatedAt,
+          expiresAt: data.user.expiresAt
         });
         loadServerSettings();
       }
@@ -1606,8 +1610,12 @@ export default function IELTSSpeakingApp() {
             username: user.username,
             name: user.name,
             level: user.level,
+            role: user.role,
+            status: user.status,
             isLoggedIn: true,
-            createdAt: user.createdAt || new Date().toISOString()
+            createdAt: user.createdAt || new Date().toISOString(),
+            activatedAt: user.activatedAt,
+            expiresAt: user.expiresAt
           });
           loadServerSettings();
         }}
@@ -1627,8 +1635,13 @@ export default function IELTSSpeakingApp() {
             userId: user.id,
             username: user.username,
             name: user.name,
+            level: user.level,
+            role: user.role,
+            status: user.status,
             isLoggedIn: true,
-            createdAt: user.createdAt || new Date().toISOString()
+            createdAt: user.createdAt || new Date().toISOString(),
+            activatedAt: user.activatedAt,
+            expiresAt: user.expiresAt
           });
           loadServerSettings();
         }}
