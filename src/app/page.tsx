@@ -5578,7 +5578,7 @@ function AdminView({ onBack }: { onBack: () => void }) {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createCount, setCreateCount] = useState(1);
   const [createMaxUses, setCreateMaxUses] = useState(1);
-  const [createExpiresInDays, setCreateExpiresInDays] = useState<number | ''>('');
+  const [createValidDays, setCreateValidDays] = useState<number | ''>('');
 
   // ===== 用户管理状态 =====
   const [users, setUsers] = useState<any[]>([]);
@@ -5722,7 +5722,7 @@ function AdminView({ onBack }: { onBack: () => void }) {
         body: JSON.stringify({
           count: createCount,
           maxUses: createMaxUses,
-          expiresInDays: createExpiresInDays || undefined
+          validDays: createValidDays || undefined
         })
       });
       const data = await response.json();
@@ -5731,7 +5731,7 @@ function AdminView({ onBack }: { onBack: () => void }) {
         setShowCreateDialog(false);
         setCreateCount(1);
         setCreateMaxUses(1);
-        setCreateExpiresInDays('');
+        setCreateValidDays('');
         loadInviteCodes();
       } else {
         toast.error(data.error || '创建失败');
@@ -6032,7 +6032,8 @@ function AdminView({ onBack }: { onBack: () => void }) {
       suspended: 'bg-gray-100 text-gray-800 border-gray-200',
       active: 'bg-green-100 text-green-800 border-green-200',
       used: 'bg-gray-100 text-gray-800 border-gray-200',
-      disabled: 'bg-red-100 text-red-800 border-red-200'
+      disabled: 'bg-red-100 text-red-800 border-red-200',
+      expired: 'bg-red-100 text-red-800 border-red-200'
     };
     const labels: Record<string, string> = {
       pending: '待审批',
@@ -6041,7 +6042,8 @@ function AdminView({ onBack }: { onBack: () => void }) {
       suspended: '已禁用',
       active: '可用',
       used: '已使用',
-      disabled: '已禁用'
+      disabled: '已禁用',
+      expired: '已过期'
     };
     return (
       <Badge className={styles[status] || 'bg-gray-100 text-gray-800'}>
@@ -6308,7 +6310,7 @@ function AdminView({ onBack }: { onBack: () => void }) {
                               <Copy className="w-4 h-4" />
                             </Button>
                           </div>
-                          {getStatusBadge(code.status)}
+                          {getStatusBadge(code.expired ? 'expired' : code.status)}
                         </div>
                         <div className="flex items-center gap-6 text-sm text-slate-600">
                           <div className="text-center">
@@ -6316,13 +6318,19 @@ function AdminView({ onBack }: { onBack: () => void }) {
                             <p className="font-medium">{code.usedCount}/{code.maxUses}</p>
                           </div>
                           <div className="text-center">
-                            <p className="text-xs text-slate-400">创建时间</p>
-                            <p className="font-medium">{formatDate(code.createdAt)}</p>
+                            <p className="text-xs text-slate-400">有效天数</p>
+                            <p className="font-medium">{code.validDays || '永久'}</p>
                           </div>
+                          {code.firstUsedAt && (
+                            <div className="text-center">
+                              <p className="text-xs text-slate-400">首次使用</p>
+                              <p className="font-medium">{formatDate(code.firstUsedAt)}</p>
+                            </div>
+                          )}
                           {code.expiresAt && (
                             <div className="text-center">
                               <p className="text-xs text-slate-400">过期时间</p>
-                              <p className="font-medium">{formatDate(code.expiresAt)}</p>
+                              <p className={`font-medium ${code.expired ? 'text-red-500' : ''}`}>{formatDate(code.expiresAt)}</p>
                             </div>
                           )}
                           <Button
@@ -6374,14 +6382,15 @@ function AdminView({ onBack }: { onBack: () => void }) {
                   <p className="text-xs text-slate-500">默认每个邀请码只能使用一次</p>
                 </div>
                 <div className="space-y-2">
-                  <Label>有效期（天）</Label>
+                  <Label>有效天数</Label>
                   <Input
                     type="number"
                     min={1}
                     placeholder="留空表示永久有效"
-                    value={createExpiresInDays}
-                    onChange={(e) => setCreateExpiresInDays(e.target.value ? parseInt(e.target.value) : '')}
+                    value={createValidDays}
+                    onChange={(e) => setCreateValidDays(e.target.value ? parseInt(e.target.value) : '')}
                   />
+                  <p className="text-xs text-slate-500">从首次使用开始计算有效期</p>
                 </div>
               </div>
               <DialogFooter>

@@ -2,6 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { hashPassword, generateToken, setAuthCookie } from '@/lib/auth';
 
+// 计算邀请码是否过期
+function isCodeExpired(code: { validDays: number | null; firstUsedAt: Date | null; expiresAt: Date | null }): boolean {
+  // 新逻辑：从首次使用开始计算
+  if (code.validDays && code.firstUsedAt) {
+    const expiresAt = new Date(code.firstUsedAt.getTime() + code.validDays * 24 * 60 * 60 * 1000);
+    return new Date() > expiresAt;
+  }
+  // 兼容旧逻辑：创建时设置的过期时间
+  if (code.expiresAt) {
+    return new Date() > code.expiresAt;
+  }
+  // 永不过期
+  return false;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -107,7 +122,8 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    if (code.expiresAt && new Date() > code.expiresAt) {
+    // 使用新的过期检查逻辑
+    if (isCodeExpired(code)) {
       return NextResponse.json({
         success: false,
         error: '邀请码已过期'
@@ -147,14 +163,14 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    // 更新邀请码使用情况
+    // 更新邀请码使用情况（首次使用时设置 firstUsedAt）
+    const newUsedCount = code.usedCount + 1;
     await db.inviteCode.update({
       where: { id: code.id },
       data: {
         usedCount: { increment: 1 },
-        status: code.usedCount + 1 >= code.maxUses ? 'used' : 'active',
-        usedBy: user.id,
-        usedAt: new Date()
+        firstUsedAt: code.firstUsedAt || new Date(), // 首次使用时设置
+        status: newUsedCount >= code.maxUses ? 'used' : 'active'
       }
     });
 

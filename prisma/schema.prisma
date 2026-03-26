@@ -43,10 +43,12 @@ model InviteCode {
   status      String    @default("active") // active, used, disabled
   maxUses     Int       @default(1) // 最大使用次数
   usedCount   Int       @default(0) // 已使用次数
-  expiresAt   DateTime? // 过期时间，null 表示永不过期
+  validDays   Int?      // 有效天数，从首次使用开始计算，null 表示永不过期
+  firstUsedAt DateTime? // 首次使用时间，用于计算过期
+  expiresAt   DateTime? // 过期时间（废弃，保留兼容）
   createdById String    // 创建者 ID
-  usedBy      String?   // 使用者 ID
-  usedAt      DateTime? // 使用时间
+  usedBy      String?   // 使用者 ID（废弃）
+  usedAt      DateTime? // 使用时间（废弃）
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   createdBy   User      @relation("InviterCodes", fields: [createdById], references: [id])

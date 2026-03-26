@@ -25,9 +25,10 @@ interface InviteCode {
   status: string;
   maxUses: number;
   usedCount: number;
+  validDays: number | null;
+  firstUsedAt: string | null;
   expiresAt: string | null;
-  usedBy: string | null;
-  usedAt: string | null;
+  expired: boolean;
   createdAt: string;
   createdBy?: { id: string; username: string; name?: string };
 }
@@ -56,7 +57,7 @@ export default function AdminPage() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [createCount, setCreateCount] = useState(1);
   const [createMaxUses, setCreateMaxUses] = useState(1);
-  const [createExpiresInDays, setCreateExpiresInDays] = useState<number | ''>('');
+  const [createValidDays, setCreateValidDays] = useState<number | ''>('');
 
   // 用户相关状态
   const [users, setUsers] = useState<User[]>([]);
@@ -134,7 +135,7 @@ export default function AdminPage() {
         body: JSON.stringify({
           count: createCount,
           maxUses: createMaxUses,
-          expiresInDays: createExpiresInDays || undefined
+          validDays: createValidDays || undefined
         })
       });
       const data = await response.json();
@@ -143,7 +144,7 @@ export default function AdminPage() {
         setShowCreateDialog(false);
         setCreateCount(1);
         setCreateMaxUses(1);
-        setCreateExpiresInDays('');
+        setCreateValidDays('');
         loadInviteCodes();
       } else {
         toast.error(data.error || '创建失败');
@@ -290,7 +291,8 @@ export default function AdminPage() {
       suspended: 'bg-gray-100 text-gray-800 border-gray-200',
       active: 'bg-green-100 text-green-800 border-green-200',
       used: 'bg-gray-100 text-gray-800 border-gray-200',
-      disabled: 'bg-red-100 text-red-800 border-red-200'
+      disabled: 'bg-red-100 text-red-800 border-red-200',
+      expired: 'bg-red-100 text-red-800 border-red-200'
     };
     const labels: Record<string, string> = {
       pending: '待审批',
@@ -299,7 +301,8 @@ export default function AdminPage() {
       suspended: '已禁用',
       active: '可用',
       used: '已使用',
-      disabled: '已禁用'
+      disabled: '已禁用',
+      expired: '已过期'
     };
     return (
       <Badge className={styles[status] || 'bg-gray-100 text-gray-800'}>
@@ -448,7 +451,7 @@ export default function AdminPage() {
                                 <Copy className="w-4 h-4" />
                               </Button>
                             </div>
-                            {getStatusBadge(code.status)}
+                            {getStatusBadge(code.expired ? 'expired' : code.status)}
                           </div>
 
                           <div className="flex items-center gap-6 text-sm text-slate-600">
@@ -457,13 +460,19 @@ export default function AdminPage() {
                               <p className="font-medium">{code.usedCount}/{code.maxUses}</p>
                             </div>
                             <div className="text-center">
-                              <p className="text-xs text-slate-400">创建时间</p>
-                              <p className="font-medium">{formatDate(code.createdAt)}</p>
+                              <p className="text-xs text-slate-400">有效天数</p>
+                              <p className="font-medium">{code.validDays || '永久'}</p>
                             </div>
+                            {code.firstUsedAt && (
+                              <div className="text-center">
+                                <p className="text-xs text-slate-400">首次使用</p>
+                                <p className="font-medium">{formatDate(code.firstUsedAt)}</p>
+                              </div>
+                            )}
                             {code.expiresAt && (
                               <div className="text-center">
                                 <p className="text-xs text-slate-400">过期时间</p>
-                                <p className="font-medium">{formatDate(code.expiresAt)}</p>
+                                <p className={`font-medium ${code.expired ? 'text-red-500' : ''}`}>{formatDate(code.expiresAt)}</p>
                               </div>
                             )}
                             <Button
@@ -646,15 +655,16 @@ export default function AdminPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="expires">有效期（天）</Label>
+              <Label htmlFor="expires">有效天数</Label>
               <Input
                 id="expires"
                 type="number"
                 min={1}
                 placeholder="留空表示永久有效"
-                value={createExpiresInDays}
-                onChange={(e) => setCreateExpiresInDays(e.target.value ? parseInt(e.target.value) : '')}
+                value={createValidDays}
+                onChange={(e) => setCreateValidDays(e.target.value ? parseInt(e.target.value) : '')}
               />
+              <p className="text-xs text-slate-500">从首次使用开始计算有效期</p>
             </div>
           </div>
 

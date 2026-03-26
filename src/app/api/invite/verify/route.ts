@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+// 计算邀请码是否过期
+function isCodeExpired(code: { validDays: number | null; firstUsedAt: Date | null; expiresAt: Date | null }): boolean {
+  // 新逻辑：从首次使用开始计算
+  if (code.validDays && code.firstUsedAt) {
+    const expiresAt = new Date(code.firstUsedAt.getTime() + code.validDays * 24 * 60 * 60 * 1000);
+    return new Date() > expiresAt;
+  }
+  // 兼容旧逻辑：创建时设置的过期时间
+  if (code.expiresAt) {
+    return new Date() > code.expiresAt;
+  }
+  // 永不过期
+  return false;
+}
+
 // 验证邀请码（注册前检查）
 export async function POST(request: NextRequest) {
   try {
@@ -32,7 +47,8 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    if (code.expiresAt && new Date() > code.expiresAt) {
+    // 使用新的过期检查逻辑
+    if (isCodeExpired(code)) {
       return NextResponse.json({
         success: false,
         error: '邀请码已过期'
