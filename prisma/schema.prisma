@@ -230,3 +230,19 @@ model ApiUsage {
   @@index([type, date])
   @@index([action, date])
 }
+
+// 登录日志
+model LoginLog {
+  id        String   @id @default(cuid())
+  userId    String?                      // 用户 ID（登录失败时可能为空）
+  username  String                       // 登录用户名
+  success   Boolean  @default(true)      // 是否成功
+  failReason String?                     // 失败原因
+  ipAddress String?                      // 登录 IP
+  userAgent String?                      // 浏览器信息
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([username])
+  @@index([createdAt])
+}

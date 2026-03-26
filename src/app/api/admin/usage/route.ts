@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUsageStats, getPlatformStats, recordApiUsage, ApiType, ApiAction } from '@/lib/usage';
+import { getCurrentUser } from '@/lib/auth';
 
 /**
  * 获取用量统计
  */
 export async function GET(request: NextRequest) {
   try {
+    const user = await getCurrentUser(request);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ success: false, error: '无权限' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get('days') || '7');
 

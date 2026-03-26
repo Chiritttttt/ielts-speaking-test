@@ -146,8 +146,18 @@ export async function PUT(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
+    // 支持从 URL 参数或请求体获取 id
     const { searchParams } = new URL(request.url);
-    const id = searchParams.get('id');
+    let id = searchParams.get('id');
+    
+    if (!id) {
+      try {
+        const body = await request.json();
+        id = body.id;
+      } catch (e) {
+        // 忽略解析错误
+      }
+    }
 
     if (!id) {
       return NextResponse.json({
@@ -161,7 +171,8 @@ export async function DELETE(request: NextRequest) {
     });
 
     return NextResponse.json({
-      success: true
+      success: true,
+      message: '删除成功'
     });
   } catch (error) {
     console.error('[Announcement] Delete error:', error);
