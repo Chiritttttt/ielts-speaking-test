@@ -2,6 +2,23 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { hashPassword, generateToken, setAuthCookie } from '@/lib/auth';
 
+// 获取客户端真实 IP
+function getClientIp(request: NextRequest): string | null {
+  // 优先检查代理传递的 IP
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) {
+    // x-forwarded-for 可能包含多个 IP，取第一个
+    return forwarded.split(',')[0].trim();
+  }
+  
+  const realIp = request.headers.get('x-real-ip');
+  if (realIp) {
+    return realIp.trim();
+  }
+  
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -28,6 +45,9 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // 获取客户端 IP
+    const clientIp = getClientIp(request);
+
     // 检查是否有管理员账号
     const adminCount = await db.user.count({
       where: { role: 'admin' }
@@ -45,7 +65,8 @@ export async function POST(request: NextRequest) {
             password: hashedPassword,
             name: name || 'Administrator',
             role: 'admin',
-            status: 'approved'
+            status: 'approved',
+            registeredIp: clientIp
           }
         });
 
@@ -127,6 +148,23 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    // 检查该 IP 是否已注册过（防止同一人重复注册）
+    if (clientIp) {
+      const existingIpUser = await db.user.findFirst({
+        where: {
+          registeredIp: clientIp,
+          role: 'user' // 只检查普通用户，不影响管理员
+        }
+      });
+
+      if (existingIpUser) {
+        return NextResponse.json({
+          success: false,
+          error: '该设备已注册过账号，无法重复注册'
+        }, { status: 400 });
+      }
+    }
+
     // 计算用户过期时间
     const activatedAt = new Date();
     let expiresAt: Date | null = null;
@@ -145,6 +183,7 @@ export async function POST(request: NextRequest) {
         role: 'user',
         status: 'approved', // 邀请码注册直接通过
         invitedBy: code.createdById,
+        registeredIp: clientIp,
         activatedAt,
         expiresAt
       }

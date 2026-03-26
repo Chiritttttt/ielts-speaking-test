@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
         createdAt: true,
         activatedAt: true,
         expiresAt: true,
+        registeredIp: true,
         invitedBy: true,
         _count: {
           select: { testSessions: true }

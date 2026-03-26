@@ -40,6 +40,7 @@ interface User {
   createdAt: string;
   activatedAt?: string;
   expiresAt?: string;
+  registeredIp?: string;
   testCount: number;
 }
 
@@ -715,6 +716,10 @@ export default function AdminPage() {
                 <div>
                   <p className="text-slate-500">过期时间</p>
                   <p className={`font-medium ${selectedUser.expiresAt && new Date(selectedUser.expiresAt) < new Date() ? 'text-red-500' : ''}`}>{formatDate(selectedUser.expiresAt)}</p>
+                </div>
+                <div>
+                  <p className="text-slate-500">注册 IP</p>
+                  <p className="font-medium font-mono text-xs">{selectedUser.registeredIp || '-'}</p>
                 </div>
                 <div>
                   <p className="text-slate-500">测试次数</p>

@@ -18,6 +18,7 @@ model User {
   role         String          @default("user") // user, admin
   status       String          @default("pending") // pending, approved, rejected, suspended, expired
   invitedBy    String?         // 邀请人 ID
+  registeredIp String?         // 注册 IP，用于防重复注册
   activatedAt  DateTime?       // 激活时间（注册时间）
   expiresAt    DateTime?       // 过期时间（激活时间 + 邀请码有效天数）
   createdAt    DateTime        @default(now())
@@ -25,6 +26,8 @@ model User {
   testSessions TestSession[]
   settings     UserSettings?
   inviteCodes  InviteCode[]    @relation("InviterCodes")
+
+  @@index([registeredIp]) // 为 IP 添加索引，提高查询效率
 }
 
 model UserSettings {
