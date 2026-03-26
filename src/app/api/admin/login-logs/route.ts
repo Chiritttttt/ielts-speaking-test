@@ -37,22 +37,18 @@ export async function GET(request: NextRequest) {
     // 获取总数
     const total = await db.loginLog.count({ where: whereClause });
 
-    // 统计信息
-    const stats = await db.loginLog.aggregate({
-      where: userId ? { userId } : {},
-      _count: true,
-      _sum: {
-        success: true
-      }
+    // 统计成功数量
+    const successCount = await db.loginLog.count({
+      where: { ...whereClause, success: true }
     });
 
     // 今日登录统计
-    const today = new Date().toISOString().split('T')[0];
-    const todayLogs = await db.loginLog.count({
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const todayLogins = await db.loginLog.count({
       where: {
-        createdAt: {
-          gte: new Date(today)
-        },
+        createdAt: { gte: today },
         success: true
       }
     });
@@ -60,9 +56,7 @@ export async function GET(request: NextRequest) {
     // 今日失败统计
     const todayFailed = await db.loginLog.count({
       where: {
-        createdAt: {
-          gte: new Date(today)
-        },
+        createdAt: { gte: today },
         success: false
       }
     });
@@ -81,9 +75,9 @@ export async function GET(request: NextRequest) {
       })),
       stats: {
         total,
-        successCount: stats._sum.success || 0,
-        failedCount: stats._count - (stats._sum.success || 0),
-        todayLogins: todayLogs,
+        successCount,
+        failedCount: total - successCount,
+        todayLogins,
         todayFailed
       },
       pagination: {
