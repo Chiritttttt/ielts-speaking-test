@@ -73,24 +73,63 @@ export async function GET(request: NextRequest) {
       skip: offset
     });
 
-    // 统计数据
-    const stats = await db.testSession.aggregate({
-      where: { userId },
-      _count: true,
-      _avg: { bandScore: true },
-      _max: { bandScore: true },
-      _min: { bandScore: true }
-    });
+    // 统计数据 - 安全处理
+    let stats = { _count: 0, _avg: { bandScore: null as number | null }, _max: { bandScore: null as number | null }, _min: { bandScore: null as number | null } };
+    
+    try {
+      stats = await db.testSession.aggregate({
+        where: { userId },
+        _count: true,
+        _avg: { bandScore: true },
+        _max: { bandScore: true },
+        _min: { bandScore: true }
+      });
+    } catch (e) {
+      console.error('Stats aggregate error:', e);
+    }
 
-    // 按日期统计
-    const dailyStats = await db.$queryRaw`
-      SELECT date(startedAt) as date, COUNT(*) as count, AVG(bandScore) as avgScore
-      FROM TestSession
-      WHERE userId = ${userId}
-      GROUP BY date(startedAt)
-      ORDER BY date DESC
-      LIMIT 30
-    ` as any[];
+    // 按日期统计 - 使用 Prisma 查询而非原始 SQL
+    let dailyStats: { date: string; count: number; avgScore: number | null }[] = [];
+    try {
+      // 获取最近30天的会话
+      const recentSessions = await db.testSession.findMany({
+        where: {
+          userId,
+          startedAt: {
+            gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+          }
+        },
+        select: {
+          startedAt: true,
+          bandScore: true
+        },
+        orderBy: { startedAt: 'desc' }
+      });
+
+      // 手动按日期分组
+      const dateMap = new Map<string, { count: number; totalScore: number; scoreCount: number }>();
+      
+      for (const session of recentSessions) {
+        const dateStr = session.startedAt.toISOString().split('T')[0];
+        const existing = dateMap.get(dateStr) || { count: 0, totalScore: 0, scoreCount: 0 };
+        existing.count++;
+        if (session.bandScore !== null) {
+          existing.totalScore += session.bandScore;
+          existing.scoreCount++;
+        }
+        dateMap.set(dateStr, existing);
+      }
+
+      dailyStats = Array.from(dateMap.entries())
+        .map(([date, data]) => ({
+          date,
+          count: data.count,
+          avgScore: data.scoreCount > 0 ? data.totalScore / data.scoreCount : null
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date));
+    } catch (e) {
+      console.error('Daily stats error:', e);
+    }
 
     return NextResponse.json({
       success: true,
@@ -133,11 +172,7 @@ export async function GET(request: NextRequest) {
         avgBandScore: stats._avg.bandScore,
         maxBandScore: stats._max.bandScore,
         minBandScore: stats._min.bandScore,
-        dailyStats: dailyStats.map(d => ({
-          date: d.date,
-          count: d.count,
-          avgScore: d.avgScore
-        }))
+        dailyStats
       },
       pagination: {
         limit,
