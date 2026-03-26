@@ -8,9 +8,19 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const includeCount = searchParams.get('includeCount') === 'true';
+    const type = searchParams.get('type'); // 筛选类型: general, exam-season
+    const includeInactive = searchParams.get('includeInactive') === 'true'; // 是否包含禁用的题库
+
+    const whereClause: any = {};
+    if (!includeInactive) {
+      whereClause.isActive = true;
+    }
+    if (type) {
+      whereClause.type = type;
+    }
 
     const pools = await db.questionPool.findMany({
-      where: { isActive: true },
+      where: whereClause,
       orderBy: [
         { isDefault: 'desc' },
         { createdAt: 'desc' }
@@ -63,9 +73,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description, period, isDefault, source } = body;
+    const { name, description, period, isDefault, source, type } = body;
 
-    console.log('[Pool] Create request:', { name, description, period, isDefault, source });
+    console.log('[Pool] Create request:', { name, description, period, isDefault, source, type });
 
     if (!name) {
       return NextResponse.json({
@@ -91,6 +101,7 @@ export async function POST(request: NextRequest) {
         name,
         description: description || '',
         period: period || null,
+        type: type || 'general', // 默认为一般题库
         isDefault: isDefault || false,
         source: source || 'ai'
       }
@@ -118,7 +129,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { id, name, description, period, isActive, isDefault } = body;
+    const { id, name, description, period, type, isActive, isDefault } = body;
 
     if (!id) {
       return NextResponse.json({
@@ -141,6 +152,7 @@ export async function PUT(request: NextRequest) {
         name,
         description,
         period,
+        type,
         isActive,
         isDefault
       }

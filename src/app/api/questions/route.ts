@@ -15,6 +15,41 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get('category');
     const count = parseInt(searchParams.get('count') || '5');
     const poolId = searchParams.get('poolId');
+    const getCategories = searchParams.get('getCategories') === 'true'; // 获取话题列表
+
+    // 如果请求话题列表
+    if (getCategories) {
+      const whereClause: any = { isActive: true };
+      if (part) whereClause.partNumber = parseInt(part);
+      if (poolId) {
+        whereClause.poolId = poolId;
+      }
+
+      // 获取所有不重复的话题
+      const categories = await db.questionBank.findMany({
+        where: whereClause,
+        select: { category: true, partNumber: true },
+        distinct: ['category']
+      });
+
+      // 按 part 分组
+      const groupedCategories: Record<number, string[]> = {
+        1: [],
+        2: [],
+        3: []
+      };
+
+      categories.forEach(c => {
+        if (groupedCategories[c.partNumber]) {
+          groupedCategories[c.partNumber].push(c.category);
+        }
+      });
+
+      return NextResponse.json({
+        success: true,
+        categories: groupedCategories
+      });
+    }
 
     const whereClause: any = { isActive: true };
     if (part) whereClause.partNumber = parseInt(part);

@@ -130,6 +130,7 @@ interface QuestionPool {
   name: string;
   description?: string;
   period?: string;
+  type?: string;
   isActive: boolean;
   isDefault: boolean;
   part1Count: number;
@@ -201,7 +202,7 @@ export default function AdminPage() {
   // 题库管理相关
   const [showPoolDialog, setShowPoolDialog] = useState(false);
   const [editingPool, setEditingPool] = useState<QuestionPool | null>(null);
-  const [poolForm, setPoolForm] = useState({ name: '', description: '', period: '' });
+  const [poolForm, setPoolForm] = useState({ name: '', description: '', period: '', type: 'general' });
   const [viewingPoolId, setViewingPoolId] = useState<string | null>(null);
   const [contentSubTab, setContentSubTab] = useState<'pools' | 'all-questions'>('pools');
 
@@ -354,7 +355,7 @@ export default function AdminPage() {
       if (data.success) {
         toast.success('题库创建成功');
         setShowPoolDialog(false);
-        setPoolForm({ name: '', description: '', period: '' });
+        setPoolForm({ name: '', description: '', period: '', type: 'general' });
         loadQuestionPools();
       } else {
         toast.error(data.error || '创建失败');
@@ -377,7 +378,7 @@ export default function AdminPage() {
         toast.success('题库更新成功');
         setShowPoolDialog(false);
         setEditingPool(null);
-        setPoolForm({ name: '', description: '', period: '' });
+        setPoolForm({ name: '', description: '', period: '', type: 'general' });
         loadQuestionPools();
       } else {
         toast.error(data.error || '更新失败');
@@ -1305,7 +1306,7 @@ export default function AdminPage() {
                         <Button 
                           onClick={() => { 
                             setEditingPool(null); 
-                            setPoolForm({ name: '', description: '', period: '' }); 
+                            setPoolForm({ name: '', description: '', period: '', type: 'general' }); 
                             setShowPoolDialog(true); 
                           }} 
                           className="bg-[#E31837] hover:bg-[#c41430]"
@@ -1334,7 +1335,12 @@ export default function AdminPage() {
                             )}
                             <CardHeader className="pb-2">
                               <div className="flex items-center justify-between">
-                                <CardTitle className="text-base">{pool.name}</CardTitle>
+                                <div className="flex items-center gap-2">
+                                  <CardTitle className="text-base">{pool.name}</CardTitle>
+                                  {pool.type === 'exam-season' && (
+                                    <Badge className="bg-orange-100 text-orange-700 border-orange-200">考试季</Badge>
+                                  )}
+                                </div>
                                 <Badge className={pool.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}>
                                   {pool.isActive ? '启用' : '禁用'}
                                 </Badge>
@@ -1371,7 +1377,8 @@ export default function AdminPage() {
                                     setPoolForm({ 
                                       name: pool.name, 
                                       description: pool.description || '', 
-                                      period: pool.period || '' 
+                                      period: pool.period || '',
+                                      type: pool.type || 'general'
                                     });
                                     setShowPoolDialog(true);
                                   }}
@@ -1864,6 +1871,37 @@ export default function AdminPage() {
                 value={poolForm.period} 
                 onChange={(e) => setPoolForm({ ...poolForm, period: e.target.value })} 
               />
+            </div>
+            <div className="space-y-2">
+              <Label>题库类型</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPoolForm({ ...poolForm, type: 'general' })}
+                  className={`p-3 rounded-lg border text-left transition-all ${
+                    poolForm.type === 'general' 
+                      ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500' 
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <BookOpen className="w-5 h-5 mb-1 text-slate-600" />
+                  <span className="font-medium text-sm">一般题库</span>
+                  <p className="text-xs text-slate-500">常规练习题目</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPoolForm({ ...poolForm, type: 'exam-season' })}
+                  className={`p-3 rounded-lg border text-left transition-all ${
+                    poolForm.type === 'exam-season' 
+                      ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-500' 
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <Calendar className="w-5 h-5 mb-1 text-slate-600" />
+                  <span className="font-medium text-sm">考试季题库</span>
+                  <p className="text-xs text-slate-500">当季真题库</p>
+                </button>
+              </div>
             </div>
             <div className="space-y-2">
               <Label>描述</Label>

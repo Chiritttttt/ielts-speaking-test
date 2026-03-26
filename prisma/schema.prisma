@@ -138,6 +138,7 @@ model QuestionPool {
   name        String                    // 题库名称，如 "2024年1-4月题库"
   description String?                   // 题库描述
   period      String?                   // 题库周期，如 "2024-Q1", "2024-Q2"
+  type        String   @default("general") // 题库类型: general(一般题库), exam-season(考试季题库)
   isActive    Boolean  @default(true)   // 是否启用
   isDefault   Boolean  @default(false)  // 是否为默认题库
   source      String   @default("ai")   // 来源: ai(自动生成), import(手动导入), official(官方)
@@ -150,6 +151,7 @@ model QuestionPool {
 
   @@index([isActive, isDefault])
   @@index([period])
+  @@index([type])
 }
 
 // 公告管理

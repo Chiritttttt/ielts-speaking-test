@@ -8,7 +8,7 @@ import {
   Volume2, CheckCircle2, AlertCircle, Loader2, History, User, Star,
   ArrowRight, RefreshCw, Download, Share2, Database, Plus, Sparkles,
   Eye, Trash2, X, LogOut, Upload, MessageCircle, Shield, Pencil, Languages,
-  Key, Users, Check, Copy
+  Key, Users, Check, Copy, Calendar
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -258,34 +258,52 @@ export default function IELTSSpeakingApp() {
   const [pendingTestMode, setPendingTestMode] = useState<'part1' | 'part2' | 'part3' | 'full' | null>(null);
   const [selectedPartTopics, setSelectedPartTopics] = useState<{ part1: string | null; part2: string | null; part3: string | null }>({ part1: null, part2: null, part3: null });
   const [customTopic, setCustomTopic] = useState('');
-  const [useCustomTopic, setUseCustomTopic] = useState(false);
+  
+  // 话题选择模式: 'preset'(预设话题) | 'exam-season'(考试季话题) | 'custom'(自定义话题)
+  const [topicMode, setTopicMode] = useState<'preset' | 'exam-season' | 'custom'>('preset');
 
   // 题库相关状态
-  const [questionPools, setQuestionPools] = useState<any[]>([]);
+  const [questionPools, setQuestionPools] = useState<any[]>([]); // 所有题库
+  const [generalPools, setGeneralPools] = useState<any[]>([]); // 一般题库
+  const [examSeasonPools, setExamSeasonPools] = useState<any[]>([]); // 考试季题库
   const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
+  const [selectedExamSeasonPoolId, setSelectedExamSeasonPoolId] = useState<string | null>(null); // 选中的考试季题库
+  const [examSeasonCategories, setExamSeasonCategories] = useState<Record<number, string[]>>({ 1: [], 2: [], 3: [] }); // 考试季题库话题
   const [showPoolSelector, setShowPoolSelector] = useState(false);
 
   // 获取题库列表
   useEffect(() => {
     const fetchPools = async () => {
       try {
+        // 获取所有题库
         const response = await fetch('/api/pool?includeCount=true');
         const data = await response.json();
         if (data.success) {
-          setQuestionPools(data.pools);
+          const allPools = data.pools || [];
+          setQuestionPools(allPools);
+          
+          // 分类题库
+          const general = allPools.filter((p: any) => p.type === 'general' || !p.type);
+          const examSeason = allPools.filter((p: any) => p.type === 'exam-season');
+          
+          setGeneralPools(general);
+          setExamSeasonPools(examSeason);
+          
           // 智能选择：优先选择默认题库，如果默认题库没题目则选择有题目的题库
-          const defaultPool = data.pools.find((p: any) => p.isDefault);
-          const poolsWithQuestions = data.pools.filter((p: any) => (p.totalCount || 0) > 0);
+          const defaultPool = allPools.find((p: any) => p.isDefault);
+          const poolsWithQuestions = allPools.filter((p: any) => (p.totalCount || 0) > 0);
           
           if (defaultPool && (defaultPool.totalCount || 0) > 0) {
-            // 默认题库有题目，使用默认
             setSelectedPoolId(defaultPool.id);
           } else if (poolsWithQuestions.length > 0) {
-            // 默认题库没题目，选择第一个有题目的
             setSelectedPoolId(poolsWithQuestions[0].id);
-          } else if (data.pools.length > 0) {
-            // 都没题目，选择第一个
-            setSelectedPoolId(data.pools[0].id);
+          } else if (allPools.length > 0) {
+            setSelectedPoolId(allPools[0].id);
+          }
+          
+          // 如果有考试季题库，默认选择第一个
+          if (examSeason.length > 0) {
+            setSelectedExamSeasonPoolId(examSeason[0].id);
           }
         }
       } catch (error) {
@@ -294,6 +312,29 @@ export default function IELTSSpeakingApp() {
     };
     fetchPools();
   }, []);
+
+  // 当选择考试季题库时，获取该题库的话题列表
+  useEffect(() => {
+    const fetchExamSeasonCategories = async () => {
+      if (!selectedExamSeasonPoolId) return;
+      
+      try {
+        const response = await fetch(`/api/questions?getCategories=true&poolId=${selectedExamSeasonPoolId}`);
+        const data = await response.json();
+        if (data.success) {
+          setExamSeasonCategories(data.categories);
+          // 清空之前选择的话题
+          setSelectedPartTopics({ part1: null, part2: null, part3: null });
+        }
+      } catch (error) {
+        console.error('[Categories] Fetch error:', error);
+      }
+    };
+    
+    if (topicMode === 'exam-season') {
+      fetchExamSeasonCategories();
+    }
+  }, [selectedExamSeasonPoolId, topicMode]);
 
   // Fetch questions
   const fetchQuestions = useCallback(async (part: number, topic?: string | null, autoGenerate: boolean = true, poolId?: string | null) => {
@@ -448,7 +489,10 @@ export default function IELTSSpeakingApp() {
     setPendingTestMode(mode);
     setSelectedPartTopics({ part1: null, part2: null, part3: null });
     setCustomTopic('');
-    setUseCustomTopic(false);
+    // 如果没有考试季题库，默认选择预设话题模式
+    if (examSeasonPools.length === 0) {
+      setTopicMode('preset');
+    }
     setShowTopicDialog(true);
   };
 
@@ -466,24 +510,35 @@ export default function IELTSSpeakingApp() {
     await cleanupIncompleteSessions();
     
     // 创建会话 - 如果失败则停止
-    const sessionId = await createSession();
-    if (!sessionId) {
+    const newSessionId = await createSession();
+    if (!newSessionId) {
       setPendingTestMode(null);
       return;
     }
     
     const part = mode === 'full' ? 1 : parseInt(mode.replace('part', ''));
     
+    // 根据话题模式确定要使用的题库和话题
     let topic = null;
-    if (useCustomTopic && customTopic.trim()) {
+    let poolIdToUse = selectedPoolId;
+    
+    if (topicMode === 'custom' && customTopic.trim()) {
+      // 自定义话题模式
       topic = customTopic.trim();
+    } else if (topicMode === 'exam-season') {
+      // 考试季话题模式
+      poolIdToUse = selectedExamSeasonPoolId;
+      topic = mode === 'full' 
+        ? selectedPartTopics.part1 
+        : selectedPartTopics[`part${part}` as keyof typeof selectedPartTopics];
     } else {
+      // 预设话题模式
       topic = mode === 'full' 
         ? selectedPartTopics.part1 
         : selectedPartTopics[`part${part}` as keyof typeof selectedPartTopics];
     }
     
-    await fetchQuestions(part, topic, true, selectedPoolId);
+    await fetchQuestions(part, topic, true, poolIdToUse);
     
     setView('test');
     setPendingTestMode(null);
@@ -500,15 +555,21 @@ export default function IELTSSpeakingApp() {
     await cleanupIncompleteSessions();
     
     // 创建会话 - 如果失败则停止
-    const sessionId = await createSession();
-    if (!sessionId) {
+    const newSessionId = await createSession();
+    if (!newSessionId) {
       setPendingTestMode(null);
       return;
     }
     
     const part = mode === 'full' ? 1 : parseInt(mode.replace('part', ''));
     
-    await fetchQuestions(part, null, true, selectedPoolId);
+    // 根据话题模式确定要使用的题库
+    let poolIdToUse = selectedPoolId;
+    if (topicMode === 'exam-season') {
+      poolIdToUse = selectedExamSeasonPoolId;
+    }
+    
+    await fetchQuestions(part, null, true, poolIdToUse);
     
     setView('test');
     setPendingTestMode(null);
@@ -1453,67 +1514,92 @@ export default function IELTSSpeakingApp() {
               选择练习话题
             </DialogTitle>
             <DialogDescription>
-              选择题库和话题开始练习
+              选择话题来源开始练习
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
-            {/* 题库选择 */}
-            {questionPools.length > 0 && (
-              <div>
-                <Label className="text-sm font-medium text-slate-700 mb-2 block">选择题库</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {questionPools.map((pool) => (
-                    <button
-                      key={pool.id}
-                      onClick={() => setSelectedPoolId(pool.id)}
-                      className={`p-3 rounded-lg border text-left transition-all ${
-                        selectedPoolId === pool.id 
-                          ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500' 
-                          : 'border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-sm">{pool.name}</span>
-                        {pool.isDefault && (
-                          <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-600 border-indigo-200">默认</Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-slate-500 mt-1">
-                        Part 1: {pool.part1Count || 0} | Part 2: {pool.part2Count || 0} | Part 3: {pool.part3Count || 0}
-                      </p>
-                    </button>
-                  ))}
-                </div>
+            {/* Topic mode selection - 三种选择方式 */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-slate-700">话题来源</Label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setTopicMode('preset')}
+                  className={`p-3 rounded-lg border text-center transition-all ${
+                    topicMode === 'preset' 
+                      ? 'border-[#E31837] bg-red-50 ring-1 ring-[#E31837]' 
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <BookOpen className="w-5 h-5 mx-auto mb-1 text-slate-600" />
+                  <span className="text-sm font-medium">预设话题</span>
+                  <p className="text-xs text-slate-500 mt-0.5">一般题库</p>
+                </button>
+                <button
+                  onClick={() => examSeasonPools.length > 0 && setTopicMode('exam-season')}
+                  disabled={examSeasonPools.length === 0}
+                  className={`p-3 rounded-lg border text-center transition-all ${
+                    topicMode === 'exam-season' 
+                      ? 'border-[#E31837] bg-red-50 ring-1 ring-[#E31837]' 
+                      : examSeasonPools.length === 0
+                        ? 'border-slate-100 bg-slate-50 cursor-not-allowed opacity-50'
+                        : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <Calendar className="w-5 h-5 mx-auto mb-1 text-slate-600" />
+                  <span className="text-sm font-medium">考试季话题</span>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {examSeasonPools.length > 0 ? '当季真题' : '暂无题库'}
+                  </p>
+                </button>
+                <button
+                  onClick={() => setTopicMode('custom')}
+                  className={`p-3 rounded-lg border text-center transition-all ${
+                    topicMode === 'custom' 
+                      ? 'border-[#E31837] bg-red-50 ring-1 ring-[#E31837]' 
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <Pencil className="w-5 h-5 mx-auto mb-1 text-slate-600" />
+                  <span className="text-sm font-medium">自定义话题</span>
+                  <p className="text-xs text-slate-500 mt-0.5">自由输入</p>
+                </button>
               </div>
-            )}
-
-            {/* Topic mode selection */}
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="topicMode"
-                  checked={!useCustomTopic}
-                  onChange={() => setUseCustomTopic(false)}
-                  className="w-4 h-4 text-[#E31837]"
-                />
-                <span className="text-sm">选择预设话题</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="topicMode"
-                  checked={useCustomTopic}
-                  onChange={() => setUseCustomTopic(true)}
-                  className="w-4 h-4 text-[#E31837]"
-                />
-                <span className="text-sm">自定义话题</span>
-              </label>
             </div>
 
-            {!useCustomTopic ? (
+            {/* 预设话题模式 */}
+            {topicMode === 'preset' && (
               <>
+                {/* 一般题库选择 */}
+                {generalPools.length > 1 && (
+                  <div>
+                    <Label className="text-sm font-medium text-slate-700 mb-2 block">选择题库</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {generalPools.map((pool) => (
+                        <button
+                          key={pool.id}
+                          onClick={() => setSelectedPoolId(pool.id)}
+                          className={`p-3 rounded-lg border text-left transition-all ${
+                            selectedPoolId === pool.id 
+                              ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500' 
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-sm">{pool.name}</span>
+                            {pool.isDefault && (
+                              <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-600 border-indigo-200">默认</Badge>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Part 1: {pool.part1Count || 0} | Part 2: {pool.part2Count || 0} | Part 3: {pool.part3Count || 0}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Part 1 topics */}
                 {(pendingTestMode === 'part1' || pendingTestMode === 'full') && (
                   <div>
@@ -1574,7 +1660,135 @@ export default function IELTSSpeakingApp() {
                   </div>
                 )}
               </>
-            ) : (
+            )}
+
+            {/* 考试季话题模式 */}
+            {topicMode === 'exam-season' && (
+              <>
+                {/* 考试季题库选择 */}
+                {examSeasonPools.length > 1 && (
+                  <div>
+                    <Label className="text-sm font-medium text-slate-700 mb-2 block">选择考试季题库</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {examSeasonPools.map((pool) => (
+                        <button
+                          key={pool.id}
+                          onClick={() => setSelectedExamSeasonPoolId(pool.id)}
+                          className={`p-3 rounded-lg border text-left transition-all ${
+                            selectedExamSeasonPoolId === pool.id 
+                              ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-500' 
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-sm">{pool.name}</span>
+                            <Badge variant="outline" className="text-xs bg-orange-50 text-orange-600 border-orange-200">
+                              {pool.period || '考试季'}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">
+                            Part 1: {pool.part1Count || 0} | Part 2: {pool.part2Count || 0} | Part 3: {pool.part3Count || 0}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 显示当前选中的考试季题库 */}
+                {selectedExamSeasonPoolId && (
+                  <div className="p-3 rounded-lg bg-orange-50 border border-orange-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Calendar className="w-4 h-4 text-orange-600" />
+                      <span className="text-sm font-medium text-orange-700">
+                        {examSeasonPools.find(p => p.id === selectedExamSeasonPoolId)?.name}
+                      </span>
+                    </div>
+                    <p className="text-xs text-orange-600">
+                      从该题库中选择话题或随机抽取
+                    </p>
+                  </div>
+                )}
+
+                {/* 考试季话题选择 */}
+                {(pendingTestMode === 'part1' || pendingTestMode === 'full') && examSeasonCategories[1]?.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium text-slate-700 mb-2 block">Part 1 话题（可从题库中选择或随机）</Label>
+                    <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto">
+                      {examSeasonCategories[1].map((topic) => (
+                        <button
+                          key={topic}
+                          onClick={() => setSelectedPartTopics(prev => ({ ...prev, part1: topic }))}
+                          className={`p-2 rounded-lg border text-left transition-all text-sm ${
+                            selectedPartTopics.part1 === topic ? 'border-orange-500 bg-orange-50' : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          {topic}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      已选择: {selectedPartTopics.part1 || '随机'}
+                    </p>
+                  </div>
+                )}
+                
+                {(pendingTestMode === 'part2' || pendingTestMode === 'full') && examSeasonCategories[2]?.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium text-slate-700 mb-2 block">Part 2 话题（可从题库中选择或随机）</Label>
+                    <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto">
+                      {examSeasonCategories[2].map((topic) => (
+                        <button
+                          key={topic}
+                          onClick={() => setSelectedPartTopics(prev => ({ ...prev, part2: topic }))}
+                          className={`p-2 rounded-lg border text-left transition-all text-sm ${
+                            selectedPartTopics.part2 === topic ? 'border-orange-500 bg-orange-50' : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          {topic}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      已选择: {selectedPartTopics.part2 || '随机'}
+                    </p>
+                  </div>
+                )}
+                
+                {(pendingTestMode === 'part3' || pendingTestMode === 'full') && examSeasonCategories[3]?.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium text-slate-700 mb-2 block">Part 3 话题（可从题库中选择或随机）</Label>
+                    <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto">
+                      {examSeasonCategories[3].map((topic) => (
+                        <button
+                          key={topic}
+                          onClick={() => setSelectedPartTopics(prev => ({ ...prev, part3: topic }))}
+                          className={`p-2 rounded-lg border text-left transition-all text-sm ${
+                            selectedPartTopics.part3 === topic ? 'border-orange-500 bg-orange-50' : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          {topic}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      已选择: {selectedPartTopics.part3 || '随机'}
+                    </p>
+                  </div>
+                )}
+
+                {/* 如果题库没有话题 */}
+                {selectedExamSeasonPoolId && 
+                  (!examSeasonCategories[1]?.length && !examSeasonCategories[2]?.length && !examSeasonCategories[3]?.length) && (
+                  <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 text-center">
+                    <p className="text-sm text-slate-500">该题库暂无题目，可选择随机话题开始</p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 自定义话题模式 */}
+            {topicMode === 'custom' && (
               <div>
                 <Label className="text-sm font-medium text-slate-700 mb-2 block">输入自定义话题</Label>
                 <Input
