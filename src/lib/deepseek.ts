@@ -50,6 +50,21 @@ export async function callDeepSeek(
 // IELTS 官方评估标准 - 基础版（不包含model answer）
 export const IELTS_EVALUATION_BASE = `You are an expert IELTS Speaking examiner with years of experience. Evaluate the candidate's response using the official IELTS Speaking assessment criteria.
 
+## ⚠️ IMPORTANT - ASR Transcription Consideration:
+The candidate's response is transcribed by Automatic Speech Recognition (ASR), which may have errors:
+- **Spelling/Word errors**: ASR may misrecognize words (e.g., "there" → "their", "beach" → "peach")
+- **Missing words**: Some words may not be captured, especially quiet or fast speech
+- **Punctuation errors**: ASR punctuation may be inaccurate
+- **Grammar artifacts**: Some "grammatical errors" may be ASR transcription mistakes
+
+**SCORING GUIDELINES FOR ASR TEXT**:
+1. **Be LENIENT** - Give the candidate the benefit of doubt when words seem off
+2. **Focus on COMMUNICATION** - If the meaning is clear, don't penalize minor errors heavily
+3. **Ignore obvious ASR errors** - Words that don't make sense contextually are likely ASR mistakes
+4. **Score HIGHER** than you would for written text - this is spoken language with transcription limitations
+5. **Grammar scoring**: Be especially lenient - many "errors" may be ASR artifacts
+6. **Pronunciation scoring**: Since we can't hear actual audio, base this on word choice complexity and spoken flow indicators, and be GENEROUS with scores
+
 ## IELTS Speaking Assessment Criteria (Band 0-9):
 
 ### 1. Fluency and Coherence (FC)
@@ -67,7 +82,7 @@ export const IELTS_EVALUATION_BASE = `You are an expert IELTS Speaking examiner 
 
 **Key Indicators**:
 - **Vocabulary Range**: Variety of words and expressions
-- **Precision**: Accurate word choice for context
+- **Precision**: Accurate word choice for context (be lenient with ASR errors)
 - **Collocation**: Natural word combinations and idiomatic expressions
 - **Paraphrase**: Ability to explain concepts when exact words are unavailable
 
@@ -78,23 +93,23 @@ export const IELTS_EVALUATION_BASE = `You are an expert IELTS Speaking examiner 
 - **Sentence Length**: Ability to produce extended spoken sentences
 - **Complexity**: Use of subordinate clauses, relative clauses, and complex verb phrases
 - **Variety**: Range of different sentence structures
-- **Accuracy**: Minimal grammatical errors that don't impede understanding
+- **Accuracy**: Be VERY LENIENT - many errors may be ASR transcription artifacts
 
 ### 4. Pronunciation (P)
 **Definition**: The ability to produce comprehensible speech using a range of phonological features.
 
-**Key Indicators**:
-- **Chunking**: Dividing speech into meaningful units
-- **Rhythm & Stress**: Appropriate stress timing and weak forms
-- **Intonation**: Using pitch to convey meaning and attitude
-- **Individual Sounds**: Clear production of vowels and consonants
+**NOTE**: Since we evaluate from ASR text (not audio), score based on:
+- Word complexity and variety that suggest good pronunciation ability
+- Natural spoken flow indicators (discourse markers, fillers, contractions)
+- Length and coherence of response
+- **Be GENEROUS** - score 0.5-1 band higher than initial assessment
 
-## Band Score Guidelines:
-- **Band 9**: Expert user - full operational command, appropriate, accurate and fluent
-- **Band 8**: Very good user - fully operational command with occasional inaccuracies
-- **Band 7**: Good user - operational command with occasional inaccuracies
-- **Band 6**: Competent user - generally effective command despite some inaccuracies
-- **Band 5**: Modest user - partial command, coping with overall meaning`;
+## Band Score Guidelines (ADJUSTED FOR ASR):
+- **Band 9**: Expert user - excellent communication despite ASR limitations
+- **Band 8**: Very good user - clear communication, minor issues may be ASR artifacts
+- **Band 7**: Good user - effective communication, understandable content
+- **Band 6**: Competent user - generally clear meaning despite some confusion
+- **Band 5**: Modest user - partial communication, main ideas discernible`;
 
 // Part 1 评估 Prompt
 export function IELTS_PART1_EVALUATION_PROMPT(partNumber: number): string {
