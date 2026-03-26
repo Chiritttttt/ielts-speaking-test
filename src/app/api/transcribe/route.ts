@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recordApiUsage } from '@/lib/usage';
 
 const WHISPER_SERVICE_URL = process.env.WHISPER_SERVICE_URL || 'http://localhost:5700';
 
@@ -37,6 +38,9 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await response.json();
+    
+    // 记录 Whisper 调用
+    recordApiUsage('whisper', 'transcribe', { success: true });
     
     return NextResponse.json({
       success: true,

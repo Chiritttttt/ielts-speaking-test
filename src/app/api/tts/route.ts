@@ -5,6 +5,7 @@ import { readFile, unlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
+import { recordApiUsage } from '@/lib/usage';
 
 const execAsync = promisify(exec);
 
@@ -56,6 +57,9 @@ export async function POST(request: NextRequest) {
       try {
         await unlink(outputPath);
       } catch {}
+      
+      // 记录 TTS 调用
+      recordApiUsage('tts', 'synthesize', { success: true });
       
       return new NextResponse(audioBuffer, {
         headers: {

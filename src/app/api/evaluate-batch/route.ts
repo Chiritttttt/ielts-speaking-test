@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { callDeepSeek, getEvaluationPrompt } from '@/lib/deepseek';
+import { recordApiUsage } from '@/lib/usage';
 
 // 并发评估数量（同时评估几个回答）
 const CONCURRENCY_LIMIT = 5;
@@ -69,6 +70,9 @@ Please evaluate this IELTS Speaking response according to Part ${currentPartNumb
       const result = await callDeepSeek([
         { role: 'user', content: prompt }
       ], { temperature: 0.3, max_tokens: 2000 }); // 减少 token 数量加快响应
+
+      // 记录 DeepSeek API 调用
+      recordApiUsage('deepseek', 'evaluate', { success: result.success });
 
       if (!result.success || !result.content) {
         console.error(`[Evaluate] API call failed for ${index + 1}:`, result.error);

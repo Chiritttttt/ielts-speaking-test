@@ -211,3 +211,19 @@ model DailyExpression {
 
   @@index([date])
 }
+
+// API 用量记录
+model ApiUsage {
+  id        String   @id @default(cuid())
+  type      String                       // deepseek, whisper, tts
+  action    String                       // evaluate, translate, generate, transcribe
+  userId    String?
+  success   Boolean  @default(true)
+  tokens    Int      @default(0)         // token 消耗（DeepSeek）
+  duration  Int      @default(0)         // 耗时（毫秒）
+  date      String                       // 日期 YYYY-MM-DD，便于按日统计
+  createdAt DateTime @default(now())
+
+  @@index([type, date])
+  @@index([action, date])
+}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { callDeepSeek } from '@/lib/deepseek';
+import { recordApiUsage } from '@/lib/usage';
 
 /**
  * 翻译例句API
@@ -56,6 +57,9 @@ Return ONLY the Chinese translation, nothing else.`;
     const result = await callDeepSeek([
       { role: 'user', content: prompt }
     ], { temperature: 0.3, max_tokens: 1000 });
+
+    // 记录翻译 API 调用
+    recordApiUsage('deepseek', 'translate', { success: result.success });
 
     if (!result.success || !result.content) {
       return NextResponse.json({

@@ -5555,7 +5555,7 @@ function SettingsView({ settings, updateSetting, user }: {
 }
 
 // Admin View - 综合管理后台
-type AdminTabType = 'announcements' | 'invites' | 'users' | 'questions';
+type AdminTabType = 'announcements' | 'invites' | 'users' | 'questions' | 'usage';
 
 function AdminView({ onBack }: { onBack: () => void }) {
   const [activeTab, setActiveTab] = useState<AdminTabType>('announcements');
@@ -5599,6 +5599,10 @@ function AdminView({ onBack }: { onBack: () => void }) {
   const [generateTopic, setGenerateTopic] = useState('');
   const [generateCount, setGenerateCount] = useState(5);
   const [generating, setGenerating] = useState(false);
+
+  // ===== 用量统计状态 =====
+  const [usageStats, setUsageStats] = useState<any>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
 
   // ===== 初始化加载 =====
   useEffect(() => {
@@ -5993,6 +5997,21 @@ function AdminView({ onBack }: { onBack: () => void }) {
     setGenerating(false);
   };
 
+  // ===== 用量统计函数 =====
+  const loadUsageStats = async () => {
+    setUsageLoading(true);
+    try {
+      const response = await fetch('/api/admin/usage?days=7');
+      const data = await response.json();
+      if (data.success) {
+        setUsageStats(data);
+      }
+    } catch (error) {
+      console.error('[Usage] Load error:', error);
+    }
+    setUsageLoading(false);
+  };
+
   // ===== 格式化函数 =====
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return '-';
@@ -6075,13 +6094,22 @@ function AdminView({ onBack }: { onBack: () => void }) {
           用户审批
         </button>
         <button
-          onClick={() => setActiveTab('questions')}
+          onClick={() => { setActiveTab('questions'); }}
           className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
             activeTab === 'questions' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <BookOpen className="w-4 h-4" />
           题库管理
+        </button>
+        <button
+          onClick={() => { setActiveTab('usage'); loadUsageStats(); }}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+            activeTab === 'usage' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <BarChart3 className="w-4 h-4" />
+          用量统计
         </button>
       </div>
 
@@ -6791,6 +6819,116 @@ function AdminView({ onBack }: { onBack: () => void }) {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+        </div>
+      )}
+
+      {/* ===== 用量统计 Tab ===== */}
+      {activeTab === 'usage' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">用量统计</h3>
+              <p className="text-sm text-slate-500">最近 7 天 API 调用统计</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={loadUsageStats}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              刷新
+            </Button>
+          </div>
+
+          {usageLoading ? (
+            <div className="text-center py-8 text-slate-500">
+              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+              加载中...
+            </div>
+          ) : !usageStats ? (
+            <Card>
+              <CardContent className="pt-8 text-center text-slate-500">
+                暂无数据
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* 平台概览 */}
+              <div className="grid grid-cols-5 gap-4">
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <p className="text-2xl font-bold text-indigo-600">{usageStats.platform?.userCount || 0}</p>
+                    <p className="text-xs text-slate-500">总用户</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <p className="text-2xl font-bold text-green-600">{usageStats.platform?.activeUsers || 0}</p>
+                    <p className="text-xs text-slate-500">已批准用户</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{usageStats.platform?.sessionCount || 0}</p>
+                    <p className="text-xs text-slate-500">总测试次数</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <p className="text-2xl font-bold text-amber-600">{usageStats.platform?.todaySessions || 0}</p>
+                    <p className="text-xs text-slate-500">今日测试</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 text-center">
+                    <p className="text-2xl font-bold text-purple-600">{usageStats.platform?.questionCount || 0}</p>
+                    <p className="text-xs text-slate-500">题库题目</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* API 调用统计 */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">API 调用（近 7 天）</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-4 gap-4">
+                    <div className="p-4 bg-blue-50 rounded-lg text-center">
+                      <p className="text-3xl font-bold text-blue-600">{usageStats.usage?.deepseek?.count || 0}</p>
+                      <p className="text-sm text-slate-600">DeepSeek</p>
+                      <p className="text-xs text-slate-400">{usageStats.usage?.deepseek?.tokens || 0} tokens</p>
+                    </div>
+                    <div className="p-4 bg-green-50 rounded-lg text-center">
+                      <p className="text-3xl font-bold text-green-600">{usageStats.usage?.whisper?.count || 0}</p>
+                      <p className="text-sm text-slate-600">Whisper</p>
+                      <p className="text-xs text-slate-400">语音转写</p>
+                    </div>
+                    <div className="p-4 bg-purple-50 rounded-lg text-center">
+                      <p className="text-3xl font-bold text-purple-600">{usageStats.usage?.tts?.count || 0}</p>
+                      <p className="text-sm text-slate-600">TTS</p>
+                      <p className="text-xs text-slate-400">语音合成</p>
+                    </div>
+                    <div className="p-4 bg-slate-50 rounded-lg text-center">
+                      <p className="text-3xl font-bold text-slate-600">{usageStats.usage?.totalCalls || 0}</p>
+                      <p className="text-sm text-slate-600">总调用</p>
+                      <p className="text-xs text-slate-400">全部 API</p>
+                    </div>
+                  </div>
+
+                  {/* 按动作分类 */}
+                  {usageStats.usage?.byAction && Object.keys(usageStats.usage.byAction).length > 0 && (
+                    <div className="mt-4 pt-4 border-t">
+                      <p className="text-sm font-medium text-slate-600 mb-2">调用类型分布：</p>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(usageStats.usage.byAction).map(([action, count]) => (
+                          <Badge key={action} variant="outline" className="text-xs">
+                            {action}: {count as number}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </>
+          )}
         </div>
       )}
     </div>
