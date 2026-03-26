@@ -30,7 +30,9 @@ export async function GET(request: NextRequest) {
         level: true,
         role: true,
         status: true,
-        createdAt: true
+        createdAt: true,
+        activatedAt: true,
+        expiresAt: true
       }
     });
 
@@ -45,7 +47,9 @@ export async function GET(request: NextRequest) {
       success: true,
       user: {
         ...user,
-        createdAt: user.createdAt.toISOString()
+        createdAt: user.createdAt.toISOString(),
+        activatedAt: user.activatedAt?.toISOString(),
+        expiresAt: user.expiresAt?.toISOString()
       }
     });
   } catch (error) {

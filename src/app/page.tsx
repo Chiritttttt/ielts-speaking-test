@@ -5460,14 +5460,69 @@ function Part3DiscussionView({
 function SettingsView({ settings, updateSetting, user }: {
   settings: { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean };
   updateSetting: <K extends keyof { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean }>(key: K, value: { defaultVoice: string; voiceSpeed: number; showQuestionAfterSpeech: boolean; autoPlayQuestion: boolean }[K]) => void;
-  user: { userId: string; username?: string; name?: string; isLoggedIn?: boolean; createdAt: string };
+  user: { userId: string; username?: string; name?: string; isLoggedIn?: boolean; createdAt: string; expiresAt?: string; activatedAt?: string; role?: string };
 }) {
+  const [showRenewDialog, setShowRenewDialog] = useState(false);
+  const [renewCode, setRenewCode] = useState('');
+  const [renewLoading, setRenewLoading] = useState(false);
+
   const voices = [
     { id: 'us-female', name: '美音女声 🇺🇸' },
     { id: 'us-male', name: '美音男声 🇺🇸' },
     { id: 'uk-female', name: '英音女声 🇬🇧' },
     { id: 'uk-male', name: '英音男声 🇬🇧' },
   ];
+
+  // 计算剩余天数
+  const getDaysRemaining = () => {
+    if (!user.expiresAt) return null;
+    const now = new Date();
+    const expires = new Date(user.expiresAt);
+    const diff = expires.getTime() - now.getTime();
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+    return days;
+  };
+
+  // 检查是否过期
+  const isExpired = () => {
+    if (!user.expiresAt) return false;
+    return new Date(user.expiresAt) < new Date();
+  };
+
+  // 续费
+  const handleRenew = async () => {
+    if (!renewCode.trim()) {
+      toast.error('请输入邀请码');
+      return;
+    }
+
+    setRenewLoading(true);
+    try {
+      const response = await fetch('/api/user/renew', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inviteCode: renewCode.trim() })
+      });
+      const data = await response.json();
+      
+      if (data.success) {
+        toast.success(data.message);
+        setShowRenewDialog(false);
+        setRenewCode('');
+        // 刷新用户信息
+        window.location.reload();
+      } else {
+        toast.error(data.error || '续费失败');
+      }
+    } catch (error) {
+      toast.error('续费失败，请稍后重试');
+    }
+    setRenewLoading(false);
+  };
+
+  const daysRemaining = getDaysRemaining();
+  const expired = isExpired();
+  const isAdmin = user.role === 'admin';
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -5488,6 +5543,44 @@ function SettingsView({ settings, updateSetting, user }: {
                 <div><Label className="text-sm font-medium text-slate-500">用户名</Label><p className="text-base font-semibold">{user.username || '-'}</p></div>
                 <div><Label className="text-sm font-medium text-slate-500">昵称</Label><p className="text-base font-semibold">{user.name || '-'}</p></div>
               </div>
+              
+              {/* 会员状态 */}
+              {isAdmin ? (
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                  <p className="text-sm text-purple-800"><strong>👑 管理员账号：</strong>永久有效，无需续费</p>
+                </div>
+              ) : expired ? (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-red-800 font-medium">⚠ 会员已过期</p>
+                      <p className="text-xs text-red-600 mt-1">过期时间：{user.expiresAt ? new Date(user.expiresAt).toLocaleDateString() : '-'}</p>
+                    </div>
+                    <Button size="sm" onClick={() => setShowRenewDialog(true)} className="bg-[#E31837] hover:bg-[#c41430]">
+                      立即续费
+                    </Button>
+                  </div>
+                </div>
+              ) : daysRemaining !== null ? (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-blue-800">
+                        <strong>💎 会员有效：</strong>剩余 <span className="font-bold text-lg">{daysRemaining}</span> 天
+                      </p>
+                      <p className="text-xs text-blue-600 mt-1">到期时间：{new Date(user.expiresAt!).toLocaleDateString()}</p>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => setShowRenewDialog(true)} className="border-blue-300 text-blue-700">
+                      续费延长
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-800"><strong>✓ 永久会员：</strong>账号永久有效</p>
+                </div>
+              )}
+              
               <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
                 <p className="text-sm text-green-800"><strong>✓ 数据已同步：</strong>您的练习记录和设置保存在服务器，可跨设备访问。</p>
               </div>
@@ -5550,6 +5643,40 @@ function SettingsView({ settings, updateSetting, user }: {
           </div>
         </CardContent>
       </Card>
+
+      {/* 续费对话框 */}
+      <Dialog open={showRenewDialog} onOpenChange={setShowRenewDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Key className="w-5 h-5 text-[#E31837]" />
+              续费会员
+            </DialogTitle>
+            <DialogDescription>
+              输入新的邀请码即可延长会员有效期
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="renewCode">邀请码</Label>
+            <Input
+              id="renewCode"
+              value={renewCode}
+              onChange={(e) => setRenewCode(e.target.value.toUpperCase())}
+              placeholder="请输入邀请码"
+              className="mt-2 font-mono text-lg tracking-wider"
+            />
+            <p className="text-xs text-slate-500 mt-2">
+              续费规则：未过期则在当前有效期基础上叠加，已过期则从现在开始计算
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowRenewDialog(false)}>取消</Button>
+            <Button onClick={handleRenew} disabled={renewLoading} className="bg-[#E31837] hover:bg-[#c41430]">
+              {renewLoading ? '处理中...' : '确认续费'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -15,9 +15,11 @@ export interface UserInfo {
   name?: string;
   level?: string;
   role?: string;
-  status?: string; // pending, approved, rejected, suspended
+  status?: string; // pending, approved, rejected, suspended, expired
   isLoggedIn: boolean;
   createdAt: string;
+  activatedAt?: string; // 激活时间
+  expiresAt?: string;   // 过期时间
 }
 
 export interface Question {
