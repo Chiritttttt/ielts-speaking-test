@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * 调用 DeepSeek 生成每日地道表达
- * 翻译在用户点击时按需生成
+ * 整个词条都会更新，翻译按需生成
  */
 async function generateDailyExpression(date: string) {
   const prompt = `Generate a daily IELTS idiomatic expression for Chinese learners. Return ONLY valid JSON with this exact structure:
@@ -137,28 +137,59 @@ Generate a different expression each time. Today's date is ${date}.`;
 
     const data = JSON.parse(jsonStr);
 
-    // 保存到数据库（不包含翻译，翻译按需生成）
-    const saved = await db.dailyExpression.create({
-      data: {
-        date,
-        expression: data.expression,
-        meaning: data.meaning,
-        meaningEn: data.meaningEn || null,
-        pronunciation: data.pronunciation || null,
-        category: data.category || 'idiom',
-        usageTips: data.usageTips || null,
-        part1Example: data.part1Example || null,
-        part1ExampleCn: null, // 翻译按需生成
-        part2Example: data.part2Example || null,
-        part2ExampleCn: null,
-        part3Example: data.part3Example || null,
-        part3ExampleCn: null,
-        commonMistakes: data.commonMistakes || null,
-        alternatives: data.alternatives || null
-      }
+    // 检查是否已有该日期的记录
+    const existing = await db.dailyExpression.findUnique({
+      where: { date }
     });
 
-    console.log('[Daily Expression] Generated and saved:', saved.expression);
+    let saved;
+    if (existing) {
+      // 更新现有记录（整个词条都更新）
+      saved = await db.dailyExpression.update({
+        where: { date },
+        data: {
+          expression: data.expression,
+          meaning: data.meaning,
+          meaningEn: data.meaningEn || null,
+          pronunciation: data.pronunciation || null,
+          category: data.category || 'idiom',
+          usageTips: data.usageTips || null,
+          part1Example: data.part1Example || null,
+          part1ExampleCn: null, // 翻译按需生成
+          part2Example: data.part2Example || null,
+          part2ExampleCn: null,
+          part3Example: data.part3Example || null,
+          part3ExampleCn: null,
+          commonMistakes: data.commonMistakes || null,
+          alternatives: data.alternatives || null,
+          updatedAt: new Date()
+        }
+      });
+      console.log('[Daily Expression] Updated for date:', date);
+    } else {
+      // 创建新记录
+      saved = await db.dailyExpression.create({
+        data: {
+          date,
+          expression: data.expression,
+          meaning: data.meaning,
+          meaningEn: data.meaningEn || null,
+          pronunciation: data.pronunciation || null,
+          category: data.category || 'idiom',
+          usageTips: data.usageTips || null,
+          part1Example: data.part1Example || null,
+          part1ExampleCn: null,
+          part2Example: data.part2Example || null,
+          part2ExampleCn: null,
+          part3Example: data.part3Example || null,
+          part3ExampleCn: null,
+          commonMistakes: data.commonMistakes || null,
+          alternatives: data.alternatives || null
+        }
+      });
+      console.log('[Daily Expression] Created for date:', date);
+    }
+
     return saved;
   } catch (error) {
     console.error('[Daily Expression] Parse error:', error);
