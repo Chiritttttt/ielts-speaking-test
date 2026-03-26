@@ -129,6 +129,7 @@ interface QuestionPool {
   id: string;
   name: string;
   description?: string;
+  period?: string;
   isActive: boolean;
   isDefault: boolean;
   part1Count: number;
@@ -202,7 +203,7 @@ export default function AdminPage() {
   const [editingPool, setEditingPool] = useState<QuestionPool | null>(null);
   const [poolForm, setPoolForm] = useState({ name: '', description: '', period: '' });
   const [viewingPoolId, setViewingPoolId] = useState<string | null>(null);
-  const [contentSubTab, setContentSubTab] = useState<'pools' | 'questions'>('pools');
+  const [contentSubTab, setContentSubTab] = useState<'pools' | 'all-questions'>('pools');
 
   // 公告
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -1280,7 +1281,7 @@ export default function AdminPage() {
                       key={tab.key}
                       variant={contentSubTab === tab.key ? 'default' : 'ghost'}
                       size="sm"
-                      onClick={() => setContentSubTab(tab.key as 'pools' | 'questions')}
+                      onClick={() => setContentSubTab(tab.key as 'pools' | 'all-questions')}
                       className={contentSubTab === tab.key ? 'bg-[#E31837] hover:bg-[#c41430]' : ''}
                     >
                       <tab.icon className="w-4 h-4 mr-2" />
@@ -1350,12 +1351,12 @@ export default function AdminPage() {
                               </div>
 
                               <div className="flex items-center gap-2">
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  onClick={() => { 
-                                    setViewingPoolId(pool.id); 
-                                    setContentSubTab('questions');
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setViewingPoolId(pool.id);
+                                    setContentSubTab('all-questions');
                                     setQuestionFilter({ ...questionFilter, poolId: pool.id });
                                     loadQuestions(pool.id);
                                   }}
