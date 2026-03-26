@@ -219,6 +219,7 @@ export async function POST(request: NextRequest) {
         name: user.name,
         status: user.status,
         level: user.level,
+        role: user.role,
         activatedAt: user.activatedAt?.toISOString(),
         expiresAt: user.expiresAt?.toISOString(),
         createdAt: user.createdAt.toISOString()
