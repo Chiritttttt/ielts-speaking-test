@@ -197,6 +197,12 @@ export default function AdminPage() {
   const [questionFilter, setQuestionFilter] = useState<{ part?: string; poolId?: string }>({});
   const [showQuestionDialog, setShowQuestionDialog] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
+  // 题库管理相关
+  const [showPoolDialog, setShowPoolDialog] = useState(false);
+  const [editingPool, setEditingPool] = useState<QuestionPool | null>(null);
+  const [poolForm, setPoolForm] = useState({ name: '', description: '', period: '' });
+  const [viewingPoolId, setViewingPoolId] = useState<string | null>(null);
+  const [contentSubTab, setContentSubTab] = useState<'pools' | 'questions'>('pools');
 
   // 公告
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -309,7 +315,7 @@ export default function AdminPage() {
 
   const loadQuestionPools = async () => {
     try {
-      const response = await fetch('/api/pool');
+      const response = await fetch('/api/pool?includeCount=true');
       const data = await response.json();
       if (data.success) {
         setQuestionPools(data.pools || []);
@@ -319,11 +325,11 @@ export default function AdminPage() {
     }
   };
 
-  const loadQuestions = async () => {
+  const loadQuestions = async (poolId?: string) => {
     try {
       const params = new URLSearchParams();
       if (questionFilter.part) params.append('part', questionFilter.part);
-      if (questionFilter.poolId) params.append('poolId', questionFilter.poolId);
+      if (poolId || questionFilter.poolId) params.append('poolId', poolId || questionFilter.poolId || '');
       
       const response = await fetch(`/api/questions?${params.toString()}`);
       const data = await response.json();
@@ -332,6 +338,105 @@ export default function AdminPage() {
       }
     } catch (error) {
       console.error('Load questions error:', error);
+    }
+  };
+
+  // 题库操作
+  const createPool = async () => {
+    try {
+      const response = await fetch('/api/pool', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(poolForm)
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('题库创建成功');
+        setShowPoolDialog(false);
+        setPoolForm({ name: '', description: '', period: '' });
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '创建失败');
+      }
+    } catch (error) {
+      toast.error('创建失败');
+    }
+  };
+
+  const updatePool = async () => {
+    if (!editingPool) return;
+    try {
+      const response = await fetch('/api/pool', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingPool.id, ...poolForm })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('题库更新成功');
+        setShowPoolDialog(false);
+        setEditingPool(null);
+        setPoolForm({ name: '', description: '', period: '' });
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '更新失败');
+      }
+    } catch (error) {
+      toast.error('更新失败');
+    }
+  };
+
+  const deletePool = async (id: string) => {
+    if (!confirm('确定要删除这个题库吗？题库中的所有题目也会被删除！')) return;
+    try {
+      const response = await fetch(`/api/pool?id=${id}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('题库已删除');
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '删除失败');
+      }
+    } catch (error) {
+      toast.error('删除失败');
+    }
+  };
+
+  const setDefaultPool = async (id: string) => {
+    try {
+      const response = await fetch('/api/pool', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, isDefault: true })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('已设为默认题库');
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '操作失败');
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    }
+  };
+
+  const togglePoolStatus = async (pool: QuestionPool) => {
+    try {
+      const response = await fetch('/api/pool', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: pool.id, isActive: !pool.isActive })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success(pool.isActive ? '题库已禁用' : '题库已启用');
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '操作失败');
+      }
+    } catch (error) {
+      toast.error('操作失败');
     }
   };
 
@@ -1165,54 +1270,224 @@ export default function AdminPage() {
             {/* 题库管理 */}
             {contentTab === 'questions' && (
               <>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-semibold text-slate-800">题库管理</h2>
-                    <p className="text-sm text-slate-500 mt-1">管理口语题库</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={questionFilter.part || ''}
-                      onChange={(e) => { setQuestionFilter({ ...questionFilter, part: e.target.value || undefined }); }}
-                      className="px-3 py-2 border border-slate-200 rounded-md text-sm bg-white"
+                {/* 子 Tab 切换 */}
+                <div className="flex items-center gap-2 border-b border-slate-200 pb-4">
+                  {[
+                    { key: 'pools', icon: BookOpen, label: '题库列表' },
+                    { key: 'all-questions', icon: FileText, label: '所有题目' },
+                  ].map(tab => (
+                    <Button
+                      key={tab.key}
+                      variant={contentSubTab === tab.key ? 'default' : 'ghost'}
+                      size="sm"
+                      onClick={() => setContentSubTab(tab.key as 'pools' | 'questions')}
+                      className={contentSubTab === tab.key ? 'bg-[#E31837] hover:bg-[#c41430]' : ''}
                     >
-                      <option value="">全部 Part</option>
-                      <option value="1">Part 1</option>
-                      <option value="2">Part 2</option>
-                      <option value="3">Part 3</option>
-                    </select>
-                    <Button variant="outline" size="sm" onClick={loadQuestions}><RefreshCw className="w-4 h-4 mr-2" />刷新</Button>
-                  </div>
+                      <tab.icon className="w-4 h-4 mr-2" />
+                      {tab.label}
+                    </Button>
+                  ))}
                 </div>
 
-                <Card>
-                  <CardHeader><CardTitle className="text-base">题目列表</CardTitle><CardDescription>共 {questions.length} 道题目</CardDescription></CardHeader>
-                  <CardContent>
-                    {questions.length === 0 ? (
-                      <div className="text-center py-8 text-slate-500"><BookOpen className="w-12 h-12 mx-auto mb-3 opacity-50" /><p>暂无题目</p></div>
-                    ) : (
-                      <ScrollArea className="h-[500px]">
-                        <div className="space-y-3">
-                          {questions.map((q) => (
-                            <div key={q.id} className="p-4 rounded-lg border border-slate-200 bg-white">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                  <Badge variant="outline">Part {q.partNumber}</Badge>
-                                  <Badge variant="secondary">{q.category}</Badge>
-                                  {q.pool && <Badge variant="outline" className="text-xs">{q.pool.name}</Badge>}
-                                </div>
-                                <Badge className={q.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}>
-                                  {q.isActive ? '启用' : '禁用'}
+                {/* 题库列表 */}
+                {contentSubTab === 'pools' && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-xl font-semibold text-slate-800">题库列表</h2>
+                        <p className="text-sm text-slate-500 mt-1">管理口语题库，可创建、编辑、删除题库</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={loadQuestionPools}>
+                          <RefreshCw className="w-4 h-4 mr-2" />刷新
+                        </Button>
+                        <Button 
+                          onClick={() => { 
+                            setEditingPool(null); 
+                            setPoolForm({ name: '', description: '', period: '' }); 
+                            setShowPoolDialog(true); 
+                          }} 
+                          className="bg-[#E31837] hover:bg-[#c41430]"
+                        >
+                          <Plus className="w-4 h-4 mr-2" />新增题库
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                      {questionPools.length === 0 ? (
+                        <Card className="col-span-3">
+                          <CardContent className="py-12 text-center text-slate-500">
+                            <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                            <p>暂无题库</p>
+                            <p className="text-sm mt-1">点击上方"新增题库"按钮创建</p>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        questionPools.map((pool) => (
+                          <Card key={pool.id} className={`relative ${pool.isDefault ? 'ring-2 ring-[#E31837]' : ''}`}>
+                            {pool.isDefault && (
+                              <div className="absolute top-0 right-0 bg-[#E31837] text-white text-xs px-2 py-1 rounded-bl">
+                                默认
+                              </div>
+                            )}
+                            <CardHeader className="pb-2">
+                              <div className="flex items-center justify-between">
+                                <CardTitle className="text-base">{pool.name}</CardTitle>
+                                <Badge className={pool.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}>
+                                  {pool.isActive ? '启用' : '禁用'}
                                 </Badge>
                               </div>
-                              <p className="text-slate-700">{q.questionText}</p>
-                            </div>
+                              {pool.period && <CardDescription>{pool.period}</CardDescription>}
+                            </CardHeader>
+                            <CardContent>
+                              <p className="text-sm text-slate-600 mb-3 line-clamp-2">{pool.description || '暂无描述'}</p>
+                              
+                              <div className="flex items-center gap-4 text-sm text-slate-500 mb-3">
+                                <span>Part 1: {pool.part1Count}</span>
+                                <span>Part 2: {pool.part2Count}</span>
+                                <span>Part 3: {pool.part3Count}</span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  onClick={() => { 
+                                    setViewingPoolId(pool.id); 
+                                    setContentSubTab('questions');
+                                    setQuestionFilter({ ...questionFilter, poolId: pool.id });
+                                    loadQuestions(pool.id);
+                                  }}
+                                >
+                                  <Eye className="w-4 h-4 mr-1" />查看题目
+                                </Button>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => {
+                                    setEditingPool(pool);
+                                    setPoolForm({ 
+                                      name: pool.name, 
+                                      description: pool.description || '', 
+                                      period: pool.period || '' 
+                                    });
+                                    setShowPoolDialog(true);
+                                  }}
+                                >
+                                  <Edit className="w-4 h-4 mr-1" />编辑
+                                </Button>
+                                {!pool.isDefault && (
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={() => setDefaultPool(pool.id)}
+                                  >
+                                    设为默认
+                                  </Button>
+                                )}
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  className={pool.isActive ? 'text-orange-600' : 'text-green-600'}
+                                  onClick={() => togglePoolStatus(pool)}
+                                >
+                                  {pool.isActive ? '禁用' : '启用'}
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  className="text-red-500 hover:text-red-700"
+                                  onClick={() => deletePool(pool.id)}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* 所有题目 */}
+                {contentSubTab === 'all-questions' && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h2 className="text-xl font-semibold text-slate-800">所有题目</h2>
+                        <p className="text-sm text-slate-500 mt-1">查看题库中的所有题目</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={questionFilter.part || ''}
+                          onChange={(e) => { 
+                            setQuestionFilter({ ...questionFilter, part: e.target.value || undefined }); 
+                            loadQuestions();
+                          }}
+                          className="px-3 py-2 border border-slate-200 rounded-md text-sm bg-white"
+                        >
+                          <option value="">全部 Part</option>
+                          <option value="1">Part 1</option>
+                          <option value="2">Part 2</option>
+                          <option value="3">Part 3</option>
+                        </select>
+                        <select
+                          value={questionFilter.poolId || ''}
+                          onChange={(e) => { 
+                            setQuestionFilter({ ...questionFilter, poolId: e.target.value || undefined }); 
+                            loadQuestions();
+                          }}
+                          className="px-3 py-2 border border-slate-200 rounded-md text-sm bg-white"
+                        >
+                          <option value="">全部题库</option>
+                          {questionPools.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
                           ))}
-                        </div>
-                      </ScrollArea>
-                    )}
-                  </CardContent>
-                </Card>
+                        </select>
+                        <Button variant="outline" size="sm" onClick={() => loadQuestions()}>
+                          <RefreshCw className="w-4 h-4 mr-2" />刷新
+                        </Button>
+                      </div>
+                    </div>
+
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-base">题目列表</CardTitle>
+                        <CardDescription>共 {questions.length} 道题目</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        {questions.length === 0 ? (
+                          <div className="text-center py-8 text-slate-500">
+                            <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                            <p>暂无题目</p>
+                          </div>
+                        ) : (
+                          <ScrollArea className="h-[500px]">
+                            <div className="space-y-3">
+                              {questions.map((q) => (
+                                <div key={q.id} className="p-4 rounded-lg border border-slate-200 bg-white">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="outline">Part {q.partNumber}</Badge>
+                                      <Badge variant="secondary">{q.category}</Badge>
+                                      {q.pool && <Badge variant="outline" className="text-xs">{q.pool.name}</Badge>}
+                                    </div>
+                                    <Badge className={q.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}>
+                                      {q.isActive ? '启用' : '禁用'}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-slate-700">{q.questionText}</p>
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </>
+                )}
               </>
             )}
 
@@ -1561,6 +1836,53 @@ export default function AdminPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAnnouncementDialog(false)}>取消</Button>
             <Button onClick={saveAnnouncement} className="bg-[#E31837] hover:bg-[#c41430]">{editingAnnouncement ? '保存' : '发布'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 题库编辑 */}
+      <Dialog open={showPoolDialog} onOpenChange={setShowPoolDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingPool ? '编辑题库' : '新增题库'}</DialogTitle>
+            <DialogDescription>{editingPool ? '修改题库信息' : '创建新的口语题库'}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>题库名称 *</Label>
+              <Input 
+                placeholder="如：2025年1-4月题库" 
+                value={poolForm.name} 
+                onChange={(e) => setPoolForm({ ...poolForm, name: e.target.value })} 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>题库周期</Label>
+              <Input 
+                placeholder="如：2025-Q1" 
+                value={poolForm.period} 
+                onChange={(e) => setPoolForm({ ...poolForm, period: e.target.value })} 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>描述</Label>
+              <textarea 
+                className="w-full min-h-[80px] p-3 border border-slate-200 rounded-md text-sm" 
+                placeholder="题库描述（可选）" 
+                value={poolForm.description} 
+                onChange={(e) => setPoolForm({ ...poolForm, description: e.target.value })} 
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowPoolDialog(false); setEditingPool(null); }}>取消</Button>
+            <Button 
+              onClick={editingPool ? updatePool : createPool} 
+              className="bg-[#E31837] hover:bg-[#c41430]"
+              disabled={!poolForm.name.trim()}
+            >
+              {editingPool ? '保存' : '创建'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
