@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 记录 TTS 调用
-    recordApiUsage('tts', 'synthesize', { success: true, engine: TTS_ENGINE });
+    recordApiUsage('tts', 'synthesize', { success: true });
 
     return new NextResponse(audioBuffer, {
       headers: {
