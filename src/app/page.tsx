@@ -8,7 +8,7 @@ import {
   Volume2, CheckCircle2, AlertCircle, Loader2, History, User, Star,
   ArrowRight, RefreshCw, Download, Share2, Database, Plus, Sparkles,
   Eye, Trash2, X, LogOut, Upload, MessageCircle, Shield, Pencil, Languages,
-  Key, Users, Check, Copy, Calendar
+  Key, Users, Check, Copy, Calendar, ExternalLink, Mail
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -2656,16 +2656,51 @@ function HomeView({ onStartTest, onViewHistory, onLearnExpression }: {
         </div>
       </div>
 
-      <footer className="bg-[#333333] -mx-4 px-4 py-8 text-center">
-        <div className="flex justify-center mb-3">
-          <svg width="60" height="24" viewBox="0 0 60 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <text x="2" y="17" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="bold" fill="white" letter-spacing="1.5" opacity="0.8">
-              IELTS
-            </text>
-            <rect x="2" y="20" width="45" height="2" rx="1" fill="white" opacity="0.6"/>
-          </svg>
+      <footer className="bg-[#E31837] -mx-4 px-4 py-6">
+        <div className="max-w-4xl mx-auto">
+          {/* Logo 和标题 */}
+          <div className="flex justify-center mb-4">
+            <div className="flex items-center gap-2">
+              <svg width="60" height="24" viewBox="0 0 60 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <text x="2" y="17" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="bold" fill="white" letter-spacing="1.5">
+                  IELTS
+                </text>
+                <rect x="2" y="20" width="45" height="2" rx="1" fill="white" opacity="0.8"/>
+              </svg>
+              <span className="text-white text-sm font-medium">口语练习</span>
+            </div>
+          </div>
+          
+          {/* 链接区域 */}
+          <div className="flex justify-center gap-6 mb-4 text-sm">
+            <a 
+              href="https://ielts.neea.edu.cn/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-white/80 hover:text-white transition-colors flex items-center gap-1"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              雅思官方报名
+            </a>
+            <a 
+              href="mailto:chris-cao-yl@qq.com" 
+              className="text-white/80 hover:text-white transition-colors flex items-center gap-1"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              联系我们
+            </a>
+          </div>
+          
+          {/* 免责声明 */}
+          <div className="text-center">
+            <p className="text-white/50 text-xs mb-1">
+              本平台仅供学习交流使用，非雅思官方机构
+            </p>
+            <p className="text-white/40 text-xs">
+              IELTS is a registered trademark of University of Cambridge ESOL, the British Council, and IDP Education Australia.
+            </p>
+          </div>
         </div>
-        <p className="text-white/40 text-xs">口语练习平台</p>
       </footer>
     </div>
   );
