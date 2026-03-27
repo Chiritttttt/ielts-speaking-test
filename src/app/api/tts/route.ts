@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { readFile, unlink } from 'fs/promises';
+import { readFile, unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { recordApiUsage } from '@/lib/usage';
 
 const execAsync = promisify(exec);
+
+// TTS 引擎选择：kokoro | edge
+const TTS_ENGINE = process.env.TTS_ENGINE || 'edge';
 
 // Edge TTS 语音映射
 const EDGE_VOICES: Record<string, string> = {
@@ -19,10 +22,139 @@ const EDGE_VOICES: Record<string, string> = {
   'fable': 'en-GB-MiaNeural'
 };
 
+// Kokoro TTS 语音映射
+const KOKORO_VOICES: Record<string, string> = {
+  // 英式英语 (British English) - IELTS 推荐
+  'uk-female': 'bf_emma',
+  'uk-male': 'bm_george',
+  'bf_emma': 'bf_emma',
+  'bf_isabella': 'bf_isabella',
+  'bm_george': 'bm_george',
+  'bm_lewis': 'bm_lewis',
+  
+  // 美式英语 (American English)
+  'us-female': 'af_heart',
+  'us-male': 'am_michael',
+  'af_heart': 'af_heart',
+  'af_sarah': 'af_sarah',
+  'am_michael': 'am_michael',
+  'am_adam': 'am_adam',
+  
+  // 中文
+  'zh-female': 'zf_xiaobei',
+  'zh-male': 'zm_yunxi',
+  'zf_xiaobei': 'zf_xiaobei',
+  'zm_yunxi': 'zm_yunxi',
+  
+  // 日语
+  'ja-female': 'jf_tebukuro',
+  'ja-male': 'jm_kumo',
+  
+  // 印地语
+  'hi-female': 'hf_alpha',
+  'hi-male': 'hm_omega',
+};
+
+// Kokoro 语言代码映射
+const KOKORO_LANG_MAP: Record<string, string> = {
+  'bf': 'b', 'bm': 'b',  // British English
+  'af': 'a', 'am': 'a',  // American English
+  'zf': 'z', 'zm': 'z',  // Chinese
+  'jf': 'j', 'jm': 'j',  // Japanese
+  'hf': 'h', 'hm': 'h',  // Hindi
+};
+
+interface TTSRequest {
+  text: string;
+  voice?: string;
+  speed?: number;
+  lang?: string;
+}
+
+async function generateKokoroTTS(text: string, voice: string, speed: number, lang?: string): Promise<Buffer> {
+  const uuid = randomUUID();
+  const outputPath = join(tmpdir(), `kokoro-${uuid}.wav`);
+  
+  // 确定声音和语言
+  const kokoroVoice = KOKORO_VOICES[voice] || voice || 'bf_emma';
+  const kokoroLang = lang || KOKORO_LANG_MAP[kokoroVoice.slice(0, 2)] || 'b';
+  
+  // 创建临时 JSON 输入文件
+  const inputPath = join(tmpdir(), `kokoro-input-${uuid}.json`);
+  const inputData = {
+    text: text.substring(0, 2000),
+    output: outputPath,
+    voice: kokoroVoice,
+    lang: kokoroLang,
+    speed: speed
+  };
+  
+  await writeFile(inputPath, JSON.stringify(inputData), 'utf-8');
+  
+  try {
+    // 调用 Python Kokoro 服务
+    const pythonScript = join(process.cwd(), 'scripts', 'kokoro_service.py');
+    const { stdout, stderr } = await execAsync(
+      `python "${pythonScript}" --stdin < "${inputPath}"`,
+      { timeout: 60000, maxBuffer: 10 * 1024 * 1024 }
+    );
+    
+    // 清理输入文件
+    try { await unlink(inputPath); } catch {}
+    
+    const result = JSON.parse(stdout);
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Kokoro TTS failed');
+    }
+    
+    // 读取生成的音频文件
+    const audioBuffer = await readFile(outputPath);
+    
+    // 清理输出文件
+    try { await unlink(outputPath); } catch {}
+    
+    return audioBuffer;
+    
+  } catch (error) {
+    // 清理临时文件
+    try { await unlink(inputPath); } catch {}
+    try { await unlink(outputPath); } catch {}
+    throw error;
+  }
+}
+
+async function generateEdgeTTS(text: string, voice: string, speed: number): Promise<Buffer> {
+  const edgeVoice = EDGE_VOICES[voice] || 'en-US-AriaNeural';
+  const uuid = randomUUID();
+  const outputPath = join(tmpdir(), `tts-${uuid}.mp3`);
+  
+  const rate = Math.round((speed - 1) * 100);
+  const rateArg = rate >= 0 ? `+${rate}%` : `${rate}%`;
+  
+  const processedText = text
+    .substring(0, 2000)
+    .replace(/\n/g, ' ')
+    .replace(/\r/g, '')
+    .replace(/"/g, '\\"');
+  
+  const command = `edge-tts --voice "${edgeVoice}" --text "${processedText}" --write-media "${outputPath}" --rate="${rateArg}"`;
+  
+  try {
+    await execAsync(command, { timeout: 60000 });
+    const audioBuffer = await readFile(outputPath);
+    try { await unlink(outputPath); } catch {}
+    return audioBuffer;
+  } catch (error) {
+    try { await unlink(outputPath); } catch {}
+    throw error;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { text, voice = 'us-female', speed = 1.0 } = body;
+    const body: TTSRequest = await request.json();
+    const { text, voice = 'uk-female', speed = 1.0, lang } = body;
 
     if (!text) {
       return NextResponse.json({
@@ -31,57 +163,75 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    const edgeVoice = EDGE_VOICES[voice] || 'en-US-AriaNeural';
-    const uuid = randomUUID();
-    const outputPath = join(tmpdir(), `tts-${uuid}.mp3`);
+    let audioBuffer: Buffer;
+    let contentType: string;
 
-    // 使用 edge-tts 命令行工具
-    const rate = Math.round((speed - 1) * 100);
-    const rateArg = rate >= 0 ? `+${rate}%` : `${rate}%`;
-    
-    // 处理文本：将换行符替换为空格，并转义特殊字符
-    const processedText = text
-      .substring(0, 2000)
-      .replace(/\n/g, ' ')  // 换行符替换为空格
-      .replace(/\r/g, '')   // 移除回车符
-      .replace(/"/g, '\\"'); // 只转义双引号（单引号/撇号不需要转义，因为在双引号内）
-    
-    const command = `edge-tts --voice "${edgeVoice}" --text "${processedText}" --write-media "${outputPath}" --rate="${rateArg}"`;
-
-    try {
-      await execAsync(command, { timeout: 60000 });  // 增加超时时间到60秒
-      
-      const audioBuffer = await readFile(outputPath);
-      
-      // 清理临时文件
+    // 根据配置选择 TTS 引擎
+    if (TTS_ENGINE === 'kokoro') {
       try {
-        await unlink(outputPath);
-      } catch {}
-      
-      // 记录 TTS 调用
-      recordApiUsage('tts', 'synthesize', { success: true });
-      
-      return new NextResponse(audioBuffer, {
-        headers: {
-          'Content-Type': 'audio/mpeg',
-          'Content-Length': audioBuffer.byteLength.toString()
-        }
-      });
-    } catch (execError) {
-      console.error('Edge TTS exec error:', execError);
-      
-      // 如果 edge-tts 命令失败，返回错误
-      return NextResponse.json({
-        success: false,
-        error: 'Edge TTS 服务不可用，请确保已安装 edge-tts: pip install edge-tts'
-      }, { status: 503 });
+        audioBuffer = await generateKokoroTTS(text, voice, speed, lang);
+        contentType = 'audio/wav';
+      } catch (kokoroError) {
+        console.error('Kokoro TTS failed, falling back to Edge TTS:', kokoroError);
+        // 回退到 Edge TTS
+        audioBuffer = await generateEdgeTTS(text, voice, speed);
+        contentType = 'audio/mpeg';
+      }
+    } else {
+      // 默认使用 Edge TTS
+      audioBuffer = await generateEdgeTTS(text, voice, speed);
+      contentType = 'audio/mpeg';
     }
+
+    // 记录 TTS 调用
+    recordApiUsage('tts', 'synthesize', { success: true, engine: TTS_ENGINE });
+
+    return new NextResponse(audioBuffer, {
+      headers: {
+        'Content-Type': contentType,
+        'Content-Length': audioBuffer.byteLength.toString(),
+        'Cache-Control': 'public, max-age=3600'
+      }
+    });
 
   } catch (error) {
     console.error('TTS error:', error);
     return NextResponse.json({
       success: false,
-      error: 'TTS generation failed'
+      error: 'TTS generation failed',
+      details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
+}
+
+// 获取可用声音列表
+export async function GET() {
+  const engine = TTS_ENGINE;
+  
+  if (engine === 'kokoro') {
+    return NextResponse.json({
+      engine: 'kokoro',
+      voices: [
+        { id: 'bf_emma', name: 'Emma (British Female)', lang: 'en-GB', recommended: true },
+        { id: 'bf_isabella', name: 'Isabella (British Female)', lang: 'en-GB' },
+        { id: 'bm_george', name: 'George (British Male)', lang: 'en-GB' },
+        { id: 'bm_lewis', name: 'Lewis (British Male)', lang: 'en-GB' },
+        { id: 'af_heart', name: 'Heart (American Female)', lang: 'en-US', recommended: true },
+        { id: 'af_sarah', name: 'Sarah (American Female)', lang: 'en-US' },
+        { id: 'am_michael', name: 'Michael (American Male)', lang: 'en-US' },
+        { id: 'zf_xiaobei', name: '小贝 (Chinese Female)', lang: 'zh-CN' },
+        { id: 'zm_yunxi', name: '云希 (Chinese Male)', lang: 'zh-CN' },
+      ]
+    });
+  }
+  
+  return NextResponse.json({
+    engine: 'edge',
+    voices: [
+      { id: 'uk-female', name: 'Sonia (British Female)', lang: 'en-GB', recommended: true },
+      { id: 'uk-male', name: 'Ryan (British Male)', lang: 'en-GB' },
+      { id: 'us-female', name: 'Aria (American Female)', lang: 'en-US' },
+      { id: 'us-male', name: 'Guy (American Male)', lang: 'en-US' },
+    ]
+  });
 }
