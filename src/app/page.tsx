@@ -2531,14 +2531,35 @@ function HomeView({ onStartTest, onViewHistory, onLearnExpression }: {
     fetchAnnouncements();
   }, []);
 
-  // 预加载今日地道表达
+  // 预加载今日地道表达 - 使用 localStorage 缓存实现秒开
   useEffect(() => {
+    const CACHE_KEY = 'daily_expression_cache';
+    
+    // 1. 先从缓存读取，立即显示
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { expression } = JSON.parse(cached);
+        if (expression) {
+          setTodayExpression(expression);
+        }
+      }
+    } catch (e) {
+      console.log('[Expression] Cache read error:', e);
+    }
+
+    // 2. 后台请求 API 检查更新
     const fetchExpression = async () => {
       try {
         const response = await fetch('/api/daily-expression');
         const data = await response.json();
         if (data.success && data.expression) {
           setTodayExpression(data.expression);
+          // 保存到缓存
+          localStorage.setItem(CACHE_KEY, JSON.stringify({
+            expression: data.expression,
+            cachedAt: new Date().toISOString()
+          }));
         }
       } catch (error) {
         console.error('[Expression] Fetch error:', error);
