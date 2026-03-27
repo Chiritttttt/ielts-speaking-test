@@ -13,17 +13,17 @@ function getBeijingDate(): string {
 // 检查是否应该更新（北京时间早上8点后）
 function shouldUpdate(createdAt: Date): boolean {
   const now = new Date();
-  const beijingNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   
-  // 北京时间今天早上8点
-  const today8AM = new Date(beijingNow);
-  today8AM.setUTCHours(0, 0, 0, 0); // 因为已经是北京时间，所以直接设为0点就是8点UTC
+  // 获取北京时间的日期 (YYYY-MM-DD)
+  const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  const beijingDate = beijingTime.toISOString().split('T')[0]; // 例如 "2024-01-15"
   
-  // 创建时间转换为北京时间
-  const beijingCreated = new Date(createdAt.getTime() + 8 * 60 * 60 * 1000);
+  // 北京时间今天早上8点 = UTC 今天午夜0点
+  // 例如：北京时间 2024-01-15 08:00 = UTC 2024-01-15 00:00
+  const today8AMBeijing = new Date(beijingDate + 'T00:00:00.000Z');
   
-  // 如果创建时间在今天8点之前，则需要更新
-  return beijingCreated < today8AM;
+  // 直接比较：如果创建时间在北京时间今天8点之前，需要更新
+  return createdAt < today8AMBeijing;
 }
 
 /**
