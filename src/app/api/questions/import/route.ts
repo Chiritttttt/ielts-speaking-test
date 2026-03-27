@@ -34,7 +34,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { questions, mode = 'append' } = body;
+    const { questions, mode = 'append', poolId } = body;
 
     if (!questions || !Array.isArray(questions)) {
       return NextResponse.json({
@@ -43,8 +43,13 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // 如果是替换模式，先清空现有题库
-    if (mode === 'replace') {
+    // 如果是替换模式且指定了题库，只清空该题库的题目
+    if (mode === 'replace' && poolId) {
+      await db.questionBank.deleteMany({
+        where: { poolId }
+      });
+    } else if (mode === 'replace') {
+      // 没有指定题库，清空所有
       await db.questionBank.deleteMany({});
     }
 
@@ -60,7 +65,8 @@ export async function POST(request: NextRequest) {
           questionText: q.questionText,
           followUpQuestions: q.followUpQuestions || null,
           difficulty: q.difficulty || 'medium',
-          isActive: true
+          isActive: true,
+          poolId: poolId || null  // 关联到指定题库
         }
       });
       imported++;

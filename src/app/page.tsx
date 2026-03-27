@@ -5182,19 +5182,25 @@ function QuestionBankView({ isLoading, setIsLoading, user, showLoginDialog }: {
         return;
       }
       
+      // 先获取默认题库
+      const poolsRes = await fetch('/api/pool');
+      const poolsData = await poolsRes.json();
+      const defaultPool = poolsData.pools?.find((p: any) => p.isDefault) || poolsData.pools?.[0];
+      
       const response = await fetch('/api/questions/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           questions: data.questions,
-          mode: importMode
+          mode: importMode,
+          poolId: defaultPool?.id  // 使用默认题库
         })
       });
       
       const result = await response.json();
       
       if (result.success) {
-        toast.success(result.message);
+        toast.success(result.message || `成功导入 ${result.imported} 道题目`);
         loadAllQuestions();
         setShowImportDialog(false);
       } else {
