@@ -146,16 +146,18 @@ export async function PUT(request: NextRequest) {
       });
     }
 
+    // 只更新提供的字段，忽略 undefined
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (period !== undefined) updateData.period = period;
+    if (type !== undefined) updateData.type = type;
+    if (isActive !== undefined) updateData.isActive = isActive;
+    if (isDefault !== undefined) updateData.isDefault = isDefault;
+
     const pool = await db.questionPool.update({
       where: { id },
-      data: {
-        name,
-        description,
-        period,
-        type,
-        isActive,
-        isDefault
-      }
+      data: updateData
     });
 
     return NextResponse.json({

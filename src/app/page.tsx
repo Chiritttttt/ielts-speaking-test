@@ -6410,7 +6410,8 @@ function AdminView({ onBack }: { onBack: () => void }) {
   const loadQuestionPools = async () => {
     setPoolLoading(true);
     try {
-      const response = await fetch('/api/pool?includeCount=true');
+      // 包含禁用的题库，管理员需要看到所有题库
+      const response = await fetch('/api/pool?includeCount=true&includeInactive=true');
       const data = await response.json();
       if (data.success) {
         setQuestionPools(data.pools);
