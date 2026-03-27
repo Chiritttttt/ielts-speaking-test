@@ -104,7 +104,15 @@ async function generateKokoroTTS(text: string, voice: string, speed: number, lan
     // 清理输入文件
     try { await unlink(inputPath); } catch {}
     
-    const result = JSON.parse(stdout);
+    // 过滤掉警告信息，只保留 JSON 行
+    const lines = stdout.split('\n');
+    let jsonLine = lines.find(line => line.trim().startsWith('{'));
+    
+    if (!jsonLine) {
+      throw new Error(`No JSON output from Kokoro: ${stdout.substring(0, 500)}`);
+    }
+    
+    const result = JSON.parse(jsonLine);
     
     if (!result.success) {
       throw new Error(result.error || 'Kokoro TTS failed');

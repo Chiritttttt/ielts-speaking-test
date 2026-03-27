@@ -9,6 +9,18 @@ import json
 import os
 import tempfile
 import argparse
+import warnings
+
+# 抑制所有警告，确保输出纯净的 JSON
+warnings.filterwarnings('ignore')
+os.environ['PYTHONWARNINGS'] = 'ignore'
+
+# 抑制 torch 警告
+try:
+    import torch
+    torch.set_warn_always(False)
+except:
+    pass
 
 # 语言映射
 LANG_MAP = {
