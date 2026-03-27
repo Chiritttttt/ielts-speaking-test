@@ -130,93 +130,118 @@ async function unlockAudioContext(): Promise<boolean> {
 function CueCardDisplay({ questionText }: { questionText: string }) {
   // 解析 Cue Card 格式
   const parseCueCard = (text: string) => {
-    const lines = text.split('\n').filter(line => line.trim());
     let topic = '';
     let bullets: string[] = [];
     let explanation = '';
 
-    // 找到主标题 (通常是 "Describe..." 开头的行)
-    const topicLine = lines.find(line => line.toLowerCase().startsWith('describe'));
-    if (topicLine) {
-      topic = topicLine.trim();
-    }
-
-    // 找到 "You should say:" 后面的 bullet points
-    const bulletStartIndex = lines.findIndex(line => 
-      line.toLowerCase().includes('you should say')
+    // 首先检查是否有换行格式（标准格式）
+    const lines = text.split('\n').filter(line => line.trim());
+    const hasStandardFormat = lines.some(line => 
+      line.toLowerCase().includes('you should say') || 
+      line.startsWith('-') || 
+      line.startsWith('•')
     );
 
-    if (bulletStartIndex !== -1) {
-      // 收集 bullet points 和 explanation
-      for (let i = bulletStartIndex + 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (line.startsWith('-') || line.startsWith('•')) {
-          const bulletContent = line.replace(/^[-•]\s*/, '');
-          // 检查是否是 "and explain" 开头的行
-          if (bulletContent.toLowerCase().startsWith('and explain')) {
-            explanation = bulletContent;
-          } else {
-            bullets.push(bulletContent);
+    if (hasStandardFormat && lines.length > 1) {
+      // 标准换行格式
+      const topicLine = lines.find(line => line.toLowerCase().startsWith('describe'));
+      if (topicLine) {
+        topic = topicLine.trim();
+      }
+
+      const bulletStartIndex = lines.findIndex(line => 
+        line.toLowerCase().includes('you should say')
+      );
+
+      if (bulletStartIndex !== -1) {
+        for (let i = bulletStartIndex + 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (line.startsWith('-') || line.startsWith('•')) {
+            const bulletContent = line.replace(/^[-•]\s*/, '');
+            if (bulletContent.toLowerCase().startsWith('and explain')) {
+              explanation = bulletContent;
+            } else {
+              bullets.push(bulletContent);
+            }
+          } else if (line.length > 0 && !line.toLowerCase().includes('follow-up')) {
+            if (line.toLowerCase().startsWith('and explain')) {
+              explanation = line;
+            } else {
+              bullets.push(line);
+            }
           }
-        } else if (line.length > 0 && !line.toLowerCase().includes('follow-up')) {
-          // 处理没有 bullet 符号的行
-          if (line.toLowerCase().startsWith('and explain')) {
-            explanation = line;
-          } else {
-            bullets.push(line);
-          }
+        }
+      }
+
+      return { topic, bullets, explanation };
+    }
+
+    // 句号分隔格式（用户导入的格式，用于 TTS 自然停顿）
+    // 例如: "Describe a time you used your imagination. You should say: what the situation was. when it happened. who was there. and explain how you felt about it."
+    
+    // 使用正则表达式按句号分割，但保留句号后的空格信息
+    const sentences = text.split(/\.\s+/).filter(s => s.trim());
+    
+    if (sentences.length === 0) {
+      return { topic: text, bullets: [], explanation: '' };
+    }
+
+    // 第一句通常是 "Describe..." 开头的主标题
+    const firstSentence = sentences[0].trim();
+    if (firstSentence.toLowerCase().startsWith('describe')) {
+      topic = firstSentence;
+    } else {
+      // 如果第一句不是 Describe 开头，可能是其他类型的题目
+      topic = firstSentence;
+    }
+
+    // 查找 "You should say" 所在的句子
+    const youShouldSayIndex = sentences.findIndex(s => 
+      s.toLowerCase().includes('you should say')
+    );
+
+    if (youShouldSayIndex !== -1) {
+      // 检查 "You should say" 后面是否紧跟着内容
+      const youShouldSaySentence = sentences[youShouldSayIndex];
+      const colonIndex = youShouldSaySentence.toLowerCase().indexOf('you should say');
+      
+      // "You should say:" 后面可能有内容，需要提取
+      const afterYouShouldSay = youShouldSaySentence.substring(colonIndex + 'you should say'.length).trim();
+      // 移除可能的冒号
+      const afterColon = afterYouShouldSay.replace(/^:\s*/, '');
+      
+      if (afterColon && !afterColon.toLowerCase().startsWith('and explain')) {
+        bullets.push(afterColon);
+      }
+
+      // 提取后续的 bullet points
+      for (let i = youShouldSayIndex + 1; i < sentences.length; i++) {
+        const sentence = sentences[i].trim();
+        if (!sentence) continue;
+        
+        if (sentence.toLowerCase().startsWith('and explain')) {
+          explanation = sentence;
+        } else if (!sentence.toLowerCase().includes('follow-up')) {
+          bullets.push(sentence);
+        }
+      }
+    } else {
+      // 没有 "You should say" 标记，尝试从第二句开始作为 bullets
+      for (let i = 1; i < sentences.length; i++) {
+        const sentence = sentences[i].trim();
+        if (!sentence) continue;
+        
+        if (sentence.toLowerCase().startsWith('and explain')) {
+          explanation = sentence;
+        } else if (!sentence.toLowerCase().includes('follow-up')) {
+          bullets.push(sentence);
         }
       }
     }
 
-    // 如果没有找到标准换行格式，尝试按 "." 分割（用户导入的格式）
+    // 如果没有 bullets 但有 topic，可能是简单的题目格式
     if (!topic && bullets.length === 0) {
-      // 按 ". " 分割句子
-      const sentences = text.split(/\.\s+/).filter(s => s.trim());
-      
-      if (sentences.length > 0) {
-        // 第一句通常是 "Describe..." 开头的主标题
-        const firstSentence = sentences[0].trim();
-        if (firstSentence.toLowerCase().startsWith('describe')) {
-          topic = firstSentence;
-        }
-        
-        // 查找 "You should say" 所在的句子
-        const youShouldSaySentence = sentences.find(s => 
-          s.toLowerCase().includes('you should say')
-        );
-        
-        if (youShouldSaySentence) {
-          const youShouldSayIndex = sentences.indexOf(youShouldSaySentence);
-          
-          // 提取 bullet points（从 "You should say" 后面的句子）
-          for (let i = youShouldSayIndex + 1; i < sentences.length; i++) {
-            const sentence = sentences[i].trim();
-            if (!sentence) continue;
-            
-            if (sentence.toLowerCase().startsWith('and explain')) {
-              explanation = sentence;
-            } else if (!sentence.toLowerCase().includes('follow-up')) {
-              bullets.push(sentence);
-            }
-          }
-        } else {
-          // 没有 "You should say" 标记，尝试从第二句开始作为 bullets
-          for (let i = 1; i < sentences.length; i++) {
-            const sentence = sentences[i].trim();
-            if (sentence.toLowerCase().startsWith('and explain')) {
-              explanation = sentence;
-            } else if (!sentence.toLowerCase().includes('follow-up') && !sentence.toLowerCase().includes('you should say')) {
-              bullets.push(sentence);
-            }
-          }
-        }
-      }
-      
-      // 如果还是没有 topic，直接返回原文
-      if (!topic) {
-        return { topic: text, bullets: [], explanation: '' };
-      }
+      return { topic: text, bullets: [], explanation: '' };
     }
 
     return { topic, bullets, explanation };
