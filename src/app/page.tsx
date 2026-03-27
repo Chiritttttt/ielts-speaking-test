@@ -6000,7 +6000,7 @@ function AdminView({ onBack }: { onBack: () => void }) {
   // ===== 用户管理状态 =====
   const [users, setUsers] = useState<any[]>([]);
   const [userLoading, setUserLoading] = useState(false);
-  const [userFilter, setUserFilter] = useState<string>('pending');
+  const [userFilter, setUserFilter] = useState<string>('all');
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [showUserDialog, setShowUserDialog] = useState(false);
 
@@ -7232,7 +7232,7 @@ function AdminView({ onBack }: { onBack: () => void }) {
 
           {/* 用户详情对话框 */}
           <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
-            <DialogContent>
+            <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>用户详情</DialogTitle>
               </DialogHeader>
@@ -7253,24 +7253,46 @@ function AdminView({ onBack }: { onBack: () => void }) {
                     </div>
                   </div>
                   <hr className="border-slate-200" />
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
-                      <p className="text-slate-500">邮箱</p>
+                      <p className="text-slate-500 text-xs">邮箱</p>
                       <p className="font-medium">{selectedUser.email || '-'}</p>
                     </div>
                     <div>
-                      <p className="text-slate-500">角色</p>
+                      <p className="text-slate-500 text-xs">角色</p>
                       <p className="font-medium">{selectedUser.role === 'admin' ? '管理员' : '普通用户'}</p>
                     </div>
                     <div>
-                      <p className="text-slate-500">注册时间</p>
+                      <p className="text-slate-500 text-xs">注册时间</p>
                       <p className="font-medium">{formatDate(selectedUser.createdAt)}</p>
                     </div>
                     <div>
-                      <p className="text-slate-500">测试次数</p>
-                      <p className="font-medium">{selectedUser.testCount}</p>
+                      <p className="text-slate-500 text-xs">激活时间</p>
+                      <p className="font-medium">{formatDate(selectedUser.activatedAt)}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 text-xs">过期时间</p>
+                      <p className={`font-medium ${selectedUser.expiresAt && new Date(selectedUser.expiresAt) < new Date() ? 'text-red-500' : ''}`}>
+                        {formatDate(selectedUser.expiresAt)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 text-xs">注册 IP</p>
+                      <p className="font-medium font-mono text-xs">{selectedUser.registeredIp || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500 text-xs">测试次数</p>
+                      <p className="font-medium">{selectedUser.testCount || 0}</p>
                     </div>
                   </div>
+                  
+                  {/* 用户状态提示 */}
+                  {selectedUser.expiresAt && new Date(selectedUser.expiresAt) < new Date() && (
+                    <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+                      该用户已过期
+                    </div>
+                  )}
+                  
                   <hr className="border-slate-200" />
                   <div className="flex items-center gap-2">
                     {selectedUser.status === 'pending' && (
