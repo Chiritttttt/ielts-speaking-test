@@ -5177,9 +5177,6 @@ function QuestionBankView({ isLoading, setIsLoading, user, showLoginDialog }: {
   const [allQuestions, setAllQuestions] = useState<any[]>([]);
   const [stats, setStats] = useState({ part1: 0, part2: 0, part3: 0, total: 0 });
   const [serverKeyReady, setServerKeyReady] = useState<boolean | null>(null);
-  const [showImportDialog, setShowImportDialog] = useState(false);
-  const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadAllQuestions = useCallback(async () => {
     try {
@@ -5211,103 +5208,6 @@ function QuestionBankView({ isLoading, setIsLoading, user, showLoginDialog }: {
     loadAllQuestions();
     fetch('/api/questions/update', { method: 'POST' }).then(r => r.json()).then(d => setServerKeyReady(d.hasServerKey));
   }, [loadAllQuestions]);
-
-  // 导出题库
-  const exportQuestions = async () => {
-    try {
-      setIsLoading(true);
-      const response = await fetch('/api/questions/import');
-      const data = await response.json();
-      
-      if (data.questions) {
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `ielts-questions-${new Date().toISOString().slice(0, 10)}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        toast.success(`已导出 ${data.total} 道题目`);
-      }
-    } catch (error) {
-      toast.error('导出失败');
-    }
-    setIsLoading(false);
-  };
-
-  // 导入题库
-  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    
-    try {
-      setIsLoading(true);
-      const text = await file.text();
-      const data = JSON.parse(text);
-      
-      if (!data.questions || !Array.isArray(data.questions)) {
-        toast.error('无效的题库格式，请确保包含 questions 数组');
-        setIsLoading(false);
-        return;
-      }
-      
-      // 先获取默认题库
-      const poolsRes = await fetch('/api/pool');
-      const poolsData = await poolsRes.json();
-      const defaultPool = poolsData.pools?.find((p: any) => p.isDefault) || poolsData.pools?.[0];
-      
-      const response = await fetch('/api/questions/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          questions: data.questions,
-          mode: importMode,
-          poolId: defaultPool?.id  // 使用默认题库
-        })
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        toast.success(result.message || `成功导入 ${result.imported} 道题目`);
-        loadAllQuestions();
-        setShowImportDialog(false);
-      } else {
-        toast.error(result.error || '导入失败');
-      }
-    } catch (error) {
-      toast.error('导入失败，请检查文件格式');
-    }
-    setIsLoading(false);
-    
-    // 清空文件输入
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  // 清空题库
-  const clearQuestions = async () => {
-    if (!confirm('确定要清空所有题库吗？此操作不可恢复！')) return;
-    
-    try {
-      setIsLoading(true);
-      const response = await fetch('/api/questions/import', { method: 'DELETE' });
-      const result = await response.json();
-      
-      if (result.success) {
-        toast.success(result.message);
-        loadAllQuestions();
-      } else {
-        toast.error('清空失败');
-      }
-    } catch (error) {
-      toast.error('清空失败');
-    }
-    setIsLoading(false);
-  };
 
   const generateQuestions = async (randomTopic: boolean = false) => {
     // 检查用户是否已登录
@@ -5447,12 +5347,6 @@ function QuestionBankView({ isLoading, setIsLoading, user, showLoginDialog }: {
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2"><BookOpen className="w-5 h-5 text-emerald-500" />题库列表</CardTitle>
             <div className="flex items-center gap-2">
-              <Button onClick={exportQuestions} disabled={isLoading || stats.total === 0} variant="outline" size="sm" className="gap-1">
-                <Download className="w-4 h-4" /> 导出
-              </Button>
-              <Button onClick={() => setShowImportDialog(true)} disabled={isLoading} variant="outline" size="sm" className="gap-1">
-                <Upload className="w-4 h-4" /> 导入
-              </Button>
               <select className="px-3 py-1 border rounded-md text-sm" value={selectedPart} onChange={(e) => setSelectedPart(e.target.value)}>
                 <option value="1">Part 1 ({stats.part1}题)</option>
                 <option value="2">Part 2 ({stats.part2}题)</option>
@@ -5483,62 +5377,6 @@ function QuestionBankView({ isLoading, setIsLoading, user, showLoginDialog }: {
           </div>
         </CardContent>
       </Card>
-
-      {/* 导入对话框 */}
-      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>导入题库</DialogTitle>
-            <DialogDescription>
-              从 JSON 文件导入题目，支持追加或替换现有题库
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4 py-4">
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="importMode" checked={importMode === 'append'} onChange={() => setImportMode('append')} className="w-4 h-4" />
-                <span className="text-sm">追加到现有题库</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input type="radio" name="importMode" checked={importMode === 'replace'} onChange={() => setImportMode('replace')} className="w-4 h-4" />
-                <span className="text-sm">替换现有题库</span>
-              </label>
-            </div>
-            
-            <div className="p-4 bg-slate-50 rounded-lg">
-              <p className="text-sm text-slate-600 mb-2">导入格式示例：</p>
-              <pre className="text-xs bg-slate-100 p-2 rounded overflow-x-auto">{`{
-  "questions": [
-    {
-      "partNumber": 1,
-      "category": "Hometown",
-      "questionText": "Where are you from?",
-      "difficulty": "easy"
-    }
-  ]
-}`}</pre>
-            </div>
-            
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json"
-              onChange={handleImportFile}
-              className="hidden"
-            />
-          </div>
-          
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowImportDialog(false)}>
-              取消
-            </Button>
-            <Button onClick={() => fileInputRef.current?.click()} className="bg-[#E31837] hover:bg-[#C4142D]">
-              选择文件导入
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
