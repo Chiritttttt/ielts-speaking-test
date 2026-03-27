@@ -108,10 +108,31 @@ def main():
     parser.add_argument('--lang', '-l', type=str, help='Language code')
     parser.add_argument('--speed', '-s', type=float, default=1.0, help='Speech speed')
     parser.add_argument('--stdin', action='store_true', help='Read params from stdin as JSON')
+    parser.add_argument('--input-file', type=str, help='Read params from JSON file')
     
     args = parser.parse_args()
     
-    if args.stdin:
+    if args.input_file:
+        # 从 JSON 文件读取参数（Windows 兼容）
+        try:
+            with open(args.input_file, 'r', encoding='utf-8') as f:
+                params = json.load(f)
+            text = params.get('text', '')
+            output_path = params.get('output')
+            voice = params.get('voice', 'bf_emma')
+            lang = params.get('lang')
+            speed = params.get('speed', 1.0)
+            
+            if not output_path:
+                # 生成临时文件路径
+                fd, output_path = tempfile.mkstemp(suffix='.wav')
+                os.close(fd)
+                
+        except Exception as e:
+            result = {'success': False, 'error': f'Failed to read input file: {e}'}
+            print(json.dumps(result))
+            sys.exit(1)
+    elif args.stdin:
         # 从 stdin 读取 JSON 参数
         try:
             params = json.load(sys.stdin)

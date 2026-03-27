@@ -92,11 +92,13 @@ async function generateKokoroTTS(text: string, voice: string, speed: number, lan
   await writeFile(inputPath, JSON.stringify(inputData), 'utf-8');
   
   try {
-    // 调用 Python Kokoro 服务
+    // 调用 Python Kokoro 服务 - Windows 兼容方式
     const pythonScript = join(process.cwd(), 'scripts', 'kokoro_service.py');
+    
+    // 使用 --input-file 参数代替 stdin 重定向（Windows 兼容）
     const { stdout, stderr } = await execAsync(
-      `python "${pythonScript}" --stdin < "${inputPath}"`,
-      { timeout: 60000, maxBuffer: 10 * 1024 * 1024 }
+      `python "${pythonScript}" --input-file "${inputPath}"`,
+      { timeout: 120000, maxBuffer: 10 * 1024 * 1024 }  // 增加到 2 分钟超时
     );
     
     // 清理输入文件
@@ -212,15 +214,14 @@ export async function GET() {
     return NextResponse.json({
       engine: 'kokoro',
       voices: [
-        { id: 'bf_emma', name: 'Emma (British Female)', lang: 'en-GB', recommended: true },
-        { id: 'bf_isabella', name: 'Isabella (British Female)', lang: 'en-GB' },
-        { id: 'bm_george', name: 'George (British Male)', lang: 'en-GB' },
-        { id: 'bm_lewis', name: 'Lewis (British Male)', lang: 'en-GB' },
-        { id: 'af_heart', name: 'Heart (American Female)', lang: 'en-US', recommended: true },
-        { id: 'af_sarah', name: 'Sarah (American Female)', lang: 'en-US' },
-        { id: 'am_michael', name: 'Michael (American Male)', lang: 'en-US' },
-        { id: 'zf_xiaobei', name: '小贝 (Chinese Female)', lang: 'zh-CN' },
-        { id: 'zm_yunxi', name: '云希 (Chinese Male)', lang: 'zh-CN' },
+        { id: 'uk-female', name: 'Emma (British Female)', lang: 'en-GB', recommended: true },
+        { id: 'uk-male', name: 'George (British Male)', lang: 'en-GB' },
+        { id: 'us-female', name: 'Heart (American Female)', lang: 'en-US', recommended: true },
+        { id: 'us-male', name: 'Michael (American Male)', lang: 'en-US' },
+        { id: 'bf_emma', name: 'Emma (British Female)', lang: 'en-GB' },
+        { id: 'af_heart', name: 'Heart (American Female)', lang: 'en-US' },
+        { id: 'zh-female', name: '小贝 (Chinese Female)', lang: 'zh-CN' },
+        { id: 'zh-male', name: '云希 (Chinese Male)', lang: 'zh-CN' },
       ]
     });
   }
