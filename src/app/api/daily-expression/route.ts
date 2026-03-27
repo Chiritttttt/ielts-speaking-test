@@ -11,7 +11,8 @@ function getBeijingDate(): string {
 }
 
 // 检查是否应该更新（北京时间早上8点后）
-function shouldUpdate(createdAt: Date): boolean {
+// 使用 updatedAt 而不是 createdAt，因为更新后 createdAt 不会变
+function shouldUpdate(updatedAt: Date): boolean {
   const now = new Date();
   
   // 获取北京时间的日期 (YYYY-MM-DD)
@@ -22,8 +23,8 @@ function shouldUpdate(createdAt: Date): boolean {
   // 例如：北京时间 2024-01-15 08:00 = UTC 2024-01-15 00:00
   const today8AMBeijing = new Date(beijingDate + 'T00:00:00.000Z');
   
-  // 直接比较：如果创建时间在北京时间今天8点之前，需要更新
-  return createdAt < today8AMBeijing;
+  // 直接比较：如果最后更新时间在北京时间今天8点之前，需要更新
+  return updatedAt < today8AMBeijing;
 }
 
 /**
@@ -40,8 +41,8 @@ export async function GET(request: NextRequest) {
     });
 
     if (existing) {
-      // 检查是否需要更新（早上8点后）
-      if (!shouldUpdate(existing.createdAt)) {
+      // 检查是否需要更新（早上8点后）- 使用 updatedAt 判断
+      if (!shouldUpdate(existing.updatedAt)) {
         return NextResponse.json({
           success: true,
           expression: existing,
