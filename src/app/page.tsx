@@ -169,9 +169,54 @@ function CueCardDisplay({ questionText }: { questionText: string }) {
       }
     }
 
-    // 如果没有找到标准格式，直接返回原文
+    // 如果没有找到标准换行格式，尝试按 "." 分割（用户导入的格式）
     if (!topic && bullets.length === 0) {
-      return { topic: text, bullets: [], explanation: '' };
+      // 按 ". " 分割句子
+      const sentences = text.split(/\.\s+/).filter(s => s.trim());
+      
+      if (sentences.length > 0) {
+        // 第一句通常是 "Describe..." 开头的主标题
+        const firstSentence = sentences[0].trim();
+        if (firstSentence.toLowerCase().startsWith('describe')) {
+          topic = firstSentence;
+        }
+        
+        // 查找 "You should say" 所在的句子
+        const youShouldSaySentence = sentences.find(s => 
+          s.toLowerCase().includes('you should say')
+        );
+        
+        if (youShouldSaySentence) {
+          const youShouldSayIndex = sentences.indexOf(youShouldSaySentence);
+          
+          // 提取 bullet points（从 "You should say" 后面的句子）
+          for (let i = youShouldSayIndex + 1; i < sentences.length; i++) {
+            const sentence = sentences[i].trim();
+            if (!sentence) continue;
+            
+            if (sentence.toLowerCase().startsWith('and explain')) {
+              explanation = sentence;
+            } else if (!sentence.toLowerCase().includes('follow-up')) {
+              bullets.push(sentence);
+            }
+          }
+        } else {
+          // 没有 "You should say" 标记，尝试从第二句开始作为 bullets
+          for (let i = 1; i < sentences.length; i++) {
+            const sentence = sentences[i].trim();
+            if (sentence.toLowerCase().startsWith('and explain')) {
+              explanation = sentence;
+            } else if (!sentence.toLowerCase().includes('follow-up') && !sentence.toLowerCase().includes('you should say')) {
+              bullets.push(sentence);
+            }
+          }
+        }
+      }
+      
+      // 如果还是没有 topic，直接返回原文
+      if (!topic) {
+        return { topic: text, bullets: [], explanation: '' };
+      }
     }
 
     return { topic, bullets, explanation };
