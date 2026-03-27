@@ -547,8 +547,19 @@ export default function IELTSSpeakingApp() {
     if (currentView === 'test' && sessionId) {
       // 检查是否有已完成的回答（有 responses 说明已完成评估）
       const hasCompletedResponses = responses && responses.length > 0;
-      if (!hasCompletedResponses) {
+      // 检查是否有录音但未评估的回答
+      const pending = useIELTSStore.getState().pendingTranscriptions;
+      const hasPendingTranscriptions = pending && pending.length > 0;
+      
+      // 如果既没有完成评估，也没有录音内容，才清理会话
+      // 有录音内容的会话会保留到历史记录，用户可以稍后继续评估
+      if (!hasCompletedResponses && !hasPendingTranscriptions) {
         await cleanupIncompleteSessions(sessionId);
+      } else if (hasPendingTranscriptions && !hasCompletedResponses) {
+        // 有录音内容但没有评估，保存会话到历史记录
+        // PATCH 方法会自动保存有内容的会话
+        await cleanupIncompleteSessions(sessionId);
+        toast.info('已保存录音到历史记录，可稍后继续评估');
       }
     }
     reset();

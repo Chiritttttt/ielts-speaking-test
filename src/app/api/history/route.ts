@@ -57,6 +57,119 @@ export async function GET(request: NextRequest) {
   }
 }
 
+/**
+ * PATCH - 清理未完成的会话
+ * 用于用户中途退出时清理没有录音内容的会话
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { sessionId, userId } = body;
+
+    console.log('[History PATCH] Cleaning up incomplete sessions:', { sessionId, userId });
+
+    // 清理指定的单个会话（如果没有录音内容）
+    if (sessionId) {
+      const session = await db.testSession.findUnique({
+        where: { id: sessionId },
+        include: { 
+          responses: {
+            select: { id: true, transcription: true }
+          }
+        }
+      });
+
+      if (session) {
+        // 检查是否有有效的录音内容（有转录文本）
+        const hasContent = session.responses.some(r => r.transcription && r.transcription.trim().length > 0);
+
+        if (!hasContent) {
+          // 没有内容，删除整个会话
+          await db.speakingResponse.deleteMany({
+            where: { sessionId }
+          });
+          await db.testSession.delete({
+            where: { id: sessionId }
+          });
+          console.log('[History PATCH] Deleted empty session:', sessionId);
+          return NextResponse.json({ success: true, message: '已删除空会话' });
+        } else {
+          // 有内容，保留会话但标记为待评估
+          await db.testSession.update({
+            where: { id: sessionId },
+            data: {
+              status: 'completed',
+              completedAt: new Date()
+            }
+          });
+          console.log('[History PATCH] Preserved session with content:', sessionId);
+          return NextResponse.json({ success: true, message: '会话已保留，可在历史记录中继续评估' });
+        }
+      }
+
+      return NextResponse.json({ success: true, message: '会话不存在' });
+    }
+
+    // 清理用户所有未完成的空会话
+    if (userId && !userId.startsWith('guest')) {
+      // 找到所有 in_progress 状态的会话
+      const incompleteSessions = await db.testSession.findMany({
+        where: { 
+          userId,
+          status: 'in_progress'
+        },
+        include: {
+          responses: {
+            select: { id: true, transcription: true }
+          }
+        }
+      });
+
+      let deletedCount = 0;
+      let preservedCount = 0;
+
+      for (const session of incompleteSessions) {
+        const hasContent = session.responses.some(r => r.transcription && r.transcription.trim().length > 0);
+
+        if (!hasContent) {
+          // 删除空会话
+          await db.speakingResponse.deleteMany({
+            where: { sessionId: session.id }
+          });
+          await db.testSession.delete({
+            where: { id: session.id }
+          });
+          deletedCount++;
+        } else {
+          // 保留有内容的会话
+          await db.testSession.update({
+            where: { id: session.id },
+            data: {
+              status: 'completed',
+              completedAt: new Date()
+            }
+          });
+          preservedCount++;
+        }
+      }
+
+      console.log('[History PATCH] Cleaned up sessions:', { deletedCount, preservedCount });
+      return NextResponse.json({ 
+        success: true, 
+        message: `已清理 ${deletedCount} 个空会话，保留 ${preservedCount} 个有内容的会话`
+      });
+    }
+
+    return NextResponse.json({ success: true, message: '无操作' });
+  } catch (error) {
+    console.error('[History PATCH] Error:', error);
+    return NextResponse.json({
+      success: false,
+      error: '清理失败'
+    }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json();
