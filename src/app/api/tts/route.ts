@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
     // 记录 TTS 调用
     recordApiUsage('tts', 'synthesize', { success: true });
 
-    return new NextResponse(audioBuffer, {
+    return new NextResponse(new Uint8Array(audioBuffer), {
       headers: {
         'Content-Type': contentType,
         'Content-Length': audioBuffer.byteLength.toString(),
