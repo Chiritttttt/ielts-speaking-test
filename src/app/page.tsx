@@ -1631,7 +1631,7 @@ export default function IELTSSpeakingApp() {
                   <Calendar className="w-5 h-5 mx-auto mb-1 text-slate-600" />
                   <span className="text-sm font-medium">考试季话题</span>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {examSeasonPools.length > 0 ? '当季真题' : '暂无题库'}
+                    {examSeasonPools.length > 0 ? '当季话题' : '暂无题库'}
                   </p>
                 </button>
                 <button
@@ -7464,7 +7464,7 @@ function AdminView({ onBack }: { onBack: () => void }) {
                     >
                       <Calendar className="w-5 h-5 mx-auto mb-1 text-slate-600" />
                       <span className="text-sm font-medium">考试季题库</span>
-                      <p className="text-xs text-slate-500">当季真题</p>
+                      <p className="text-xs text-slate-500">当季话题</p>
                     </button>
                   </div>
                 </div>
