@@ -8,7 +8,8 @@ import {
   Volume2, CheckCircle2, AlertCircle, Loader2, History, User, Star,
   ArrowRight, RefreshCw, Download, Share2, Database, Plus, Sparkles,
   Eye, Trash2, X, LogOut, Upload, MessageCircle, Shield, Pencil, Languages,
-  Key, Users, Check, Copy, Calendar, ExternalLink, Mail
+  Key, Users, Check, Copy, Calendar, ExternalLink, Mail, FileText,
+  LayoutDashboard, LogIn, Globe
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -1571,7 +1572,7 @@ export default function IELTSSpeakingApp() {
             {topicMode === 'preset' && (
               <>
                 {/* 一般题库选择 */}
-                {generalPools.length > 1 && (
+                {generalPools.length > 0 && (
                   <div>
                     <Label className="text-sm font-medium text-slate-700 mb-2 block">选择题库</Label>
                     <div className="grid grid-cols-2 gap-2">
@@ -1666,7 +1667,7 @@ export default function IELTSSpeakingApp() {
             {topicMode === 'exam-season' && (
               <>
                 {/* 考试季题库选择 */}
-                {examSeasonPools.length > 1 && (
+                {examSeasonPools.length > 0 && (
                   <div>
                     <Label className="text-sm font-medium text-slate-700 mb-2 block">选择考试季题库</Label>
                     <div className="grid grid-cols-2 gap-2">
@@ -5971,10 +5972,10 @@ function SettingsView({ settings, updateSetting, user }: {
 }
 
 // Admin View - 综合管理后台
-type AdminTabType = 'announcements' | 'invites' | 'users' | 'questions' | 'usage';
+type AdminTabType = 'dashboard' | 'announcements' | 'invites' | 'users' | 'questions' | 'usage' | 'logs';
 
 function AdminView({ onBack }: { onBack: () => void }) {
-  const [activeTab, setActiveTab] = useState<AdminTabType>('announcements');
+  const [activeTab, setActiveTab] = useState<AdminTabType>('dashboard');
 
   // ===== 公告管理状态 =====
   const [announcements, setAnnouncements] = useState<any[]>([]);
@@ -6009,24 +6010,74 @@ function AdminView({ onBack }: { onBack: () => void }) {
   const [showPoolCreateDialog, setShowPoolCreateDialog] = useState(false);
   const [newPoolName, setNewPoolName] = useState('');
   const [newPoolDescription, setNewPoolDescription] = useState('');
+  const [newPoolType, setNewPoolType] = useState<'general' | 'exam-season'>('general');
+  const [newPoolPeriod, setNewPoolPeriod] = useState('');
   const [selectedPoolForGenerate, setSelectedPoolForGenerate] = useState<any | null>(null);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [generatePart, setGeneratePart] = useState(1);
   const [generateTopic, setGenerateTopic] = useState('');
   const [generateCount, setGenerateCount] = useState(5);
   const [generating, setGenerating] = useState(false);
+  // 导入题目
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importPoolId, setImportPoolId] = useState<string | null>(null);
+  const [importText, setImportText] = useState('');
+  const [importing, setImporting] = useState(false);
+  // 编辑题库
+  const [editingPool, setEditingPool] = useState<any | null>(null);
+  const [showEditPoolDialog, setShowEditPoolDialog] = useState(false);
 
   // ===== 用量统计状态 =====
   const [usageStats, setUsageStats] = useState<any>(null);
   const [usageLoading, setUsageLoading] = useState(false);
+  
+  // ===== 仪表盘状态 =====
+  const [platformStats, setPlatformStats] = useState<any>(null);
+  
+  // ===== 登录日志状态 =====
+  const [loginLogs, setLoginLogs] = useState<any[]>([]);
+  const [loginLogStats, setLoginLogStats] = useState<any>(null);
+  const [loginLogFilter, setLoginLogFilter] = useState<string>('all');
 
   // ===== 初始化加载 =====
   useEffect(() => {
+    loadDashboardData();
     fetchAnnouncements();
     loadInviteCodes();
     loadUsers(userFilter);
     loadQuestionPools();
   }, []);
+  
+  // ===== 仪表盘数据 =====
+  const loadDashboardData = async () => {
+    try {
+      const response = await fetch('/api/admin/usage?days=7');
+      const data = await response.json();
+      if (data.success) {
+        setUsageStats(data.usage);
+        setPlatformStats(data.platform);
+      }
+    } catch (error) {
+      console.error('Load dashboard error:', error);
+    }
+  };
+  
+  // ===== 登录日志函数 =====
+  const loadLoginLogs = async (success?: string) => {
+    try {
+      const url = success && success !== 'all'
+        ? `/api/admin/login-logs?success=${success}`
+        : '/api/admin/login-logs';
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.success) {
+        setLoginLogs(data.logs);
+        setLoginLogStats(data.stats);
+      }
+    } catch (error) {
+      console.error('Load login logs error:', error);
+    }
+  };
 
   // ===== 公告管理函数 =====
   const fetchAnnouncements = async () => {
@@ -6315,6 +6366,8 @@ function AdminView({ onBack }: { onBack: () => void }) {
         body: JSON.stringify({
           name: newPoolName.trim(),
           description: newPoolDescription.trim(),
+          type: newPoolType,
+          period: newPoolPeriod.trim() || undefined,
           isDefault: questionPools.length === 0 // 第一个题库自动设为默认
         })
       });
@@ -6326,6 +6379,8 @@ function AdminView({ onBack }: { onBack: () => void }) {
         toast.success('题库创建成功');
         setNewPoolName('');
         setNewPoolDescription('');
+        setNewPoolType('general');
+        setNewPoolPeriod('');
         setShowPoolCreateDialog(false);
         loadQuestionPools();
       } else {
@@ -6339,6 +6394,117 @@ function AdminView({ onBack }: { onBack: () => void }) {
       toast.error('创建失败: ' + (error.message || '网络错误'));
     }
     setPoolLoading(false);
+  };
+
+  // 编辑题库
+  const updateQuestionPool = async () => {
+    if (!editingPool || !newPoolName.trim()) {
+      toast.error('请输入题库名称');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/pool', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingPool.id,
+          name: newPoolName.trim(),
+          description: newPoolDescription.trim(),
+          type: newPoolType,
+          period: newPoolPeriod.trim() || undefined
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success('题库更新成功');
+        setEditingPool(null);
+        setShowEditPoolDialog(false);
+        setNewPoolName('');
+        setNewPoolDescription('');
+        setNewPoolType('general');
+        setNewPoolPeriod('');
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '更新失败');
+      }
+    } catch (error) {
+      toast.error('更新失败');
+    }
+  };
+
+  // 切换题库状态
+  const togglePoolStatus = async (pool: any) => {
+    try {
+      const response = await fetch('/api/pool', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: pool.id, isActive: !pool.isActive })
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success(pool.isActive ? '题库已禁用' : '题库已启用');
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '操作失败');
+      }
+    } catch (error) {
+      toast.error('操作失败');
+    }
+  };
+
+  // 导入题目
+  const openImportDialog = (poolId: string) => {
+    setImportPoolId(poolId);
+    setImportText('');
+    setShowImportDialog(true);
+  };
+
+  const importQuestions = async () => {
+    if (!importPoolId || !importText.trim()) {
+      toast.error('请输入题目数据');
+      return;
+    }
+
+    setImporting(true);
+    try {
+      let questions;
+      try {
+        questions = JSON.parse(importText);
+      } catch (e) {
+        toast.error('JSON 格式错误，请检查格式');
+        setImporting(false);
+        return;
+      }
+
+      if (!Array.isArray(questions)) {
+        toast.error('数据必须是数组格式');
+        setImporting(false);
+        return;
+      }
+
+      const response = await fetch('/api/pool/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ poolId: importPoolId, questions })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success(`成功导入 ${data.imported} 道题目`);
+        setShowImportDialog(false);
+        setImportText('');
+        setImportPoolId(null);
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '导入失败');
+      }
+    } catch (error) {
+      toast.error('导入失败');
+    } finally {
+      setImporting(false);
+    }
   };
 
   const setDefaultPool = async (poolId: string) => {
@@ -6483,19 +6649,28 @@ function AdminView({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Tab 切换 */}
-      <div className="flex gap-2 bg-slate-100 p-1 rounded-lg">
+      <div className="flex gap-2 bg-slate-100 p-1 rounded-lg overflow-x-auto">
+        <button
+          onClick={() => { setActiveTab('dashboard'); loadDashboardData(); }}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap ${
+            activeTab === 'dashboard' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <LayoutDashboard className="w-4 h-4" />
+          仪表盘
+        </button>
         <button
           onClick={() => setActiveTab('announcements')}
-          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap ${
             activeTab === 'announcements' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <MessageCircle className="w-4 h-4" />
-          公告管理
+          公告
         </button>
         <button
           onClick={() => setActiveTab('invites')}
-          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap ${
             activeTab === 'invites' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
@@ -6504,32 +6679,157 @@ function AdminView({ onBack }: { onBack: () => void }) {
         </button>
         <button
           onClick={() => setActiveTab('users')}
-          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap ${
             activeTab === 'users' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <Users className="w-4 h-4" />
-          用户审批
+          用户
         </button>
         <button
           onClick={() => { setActiveTab('questions'); }}
-          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap ${
             activeTab === 'questions' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <BookOpen className="w-4 h-4" />
-          题库管理
+          题库
         </button>
         <button
           onClick={() => { setActiveTab('usage'); loadUsageStats(); }}
-          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 ${
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap ${
             activeTab === 'usage' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
           <BarChart3 className="w-4 h-4" />
-          用量统计
+          统计
+        </button>
+        <button
+          onClick={() => { setActiveTab('logs'); loadLoginLogs(); }}
+          className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors flex items-center justify-center gap-2 whitespace-nowrap ${
+            activeTab === 'logs' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <LogIn className="w-4 h-4" />
+          日志
         </button>
       </div>
+
+      {/* ===== 仪表盘 Tab ===== */}
+      {activeTab === 'dashboard' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                    <Users className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-500">总用户</p>
+                    <p className="text-2xl font-bold">{platformStats?.userCount || 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                    <Check className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-500">活跃用户</p>
+                    <p className="text-2xl font-bold">{platformStats?.activeUsers || 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                    <FileText className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-500">总测试</p>
+                    <p className="text-2xl font-bold">{platformStats?.sessionCount || 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                    <Calendar className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-500">今日测试</p>
+                    <p className="text-2xl font-bold">{platformStats?.todaySessions || 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+          
+          {/* 快捷入口 */}
+          <div className="grid grid-cols-4 gap-4">
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab('invites')}>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-[#E31837]/10 flex items-center justify-center">
+                    <Plus className="w-5 h-5 text-[#E31837]" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-slate-800">创建邀请码</p>
+                    <p className="text-xs text-slate-500">快速生成邀请码</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab('users')}>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                    <Users className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-slate-800">用户管理</p>
+                    <p className="text-xs text-slate-500">审批和管理用户</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab('questions')}>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
+                    <BookOpen className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-slate-800">题库管理</p>
+                    <p className="text-xs text-slate-500">管理口语题库</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setActiveTab('announcements')}>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+                    <MessageCircle className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-slate-800">发布公告</p>
+                    <p className="text-xs text-slate-500">发布平台公告</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
 
       {/* ===== 公告管理 Tab ===== */}
       {activeTab === 'announcements' && (
@@ -7043,7 +7343,7 @@ function AdminView({ onBack }: { onBack: () => void }) {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold">题库管理</h3>
-              <p className="text-sm text-slate-500">创建和管理雅思口语题库，支持 AI 自动生成题目</p>
+              <p className="text-sm text-slate-500">创建和管理雅思口语题库，支持一般题库和考试季题库</p>
             </div>
             <Button onClick={() => setShowPoolCreateDialog(true)} className="bg-[#E31837] hover:bg-[#C4142D]">
               <Plus className="w-4 h-4 mr-2" />
@@ -7066,69 +7366,110 @@ function AdminView({ onBack }: { onBack: () => void }) {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-4">
+            <div className="grid grid-cols-2 gap-4">
               {questionPools.map((pool) => (
-                <Card key={pool.id} className={`${pool.isDefault ? 'border-[#E31837] border-2' : ''}`}>
-                  <CardHeader>
+                <Card key={pool.id} className={`${pool.isDefault ? 'border-[#E31837] border-2' : ''} ${!pool.isActive ? 'opacity-60' : ''}`}>
+                  <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
                       <div>
-                        <CardTitle className="flex items-center gap-2">
+                        <CardTitle className="flex items-center gap-2 text-base">
                           {pool.name}
                           {pool.isDefault && (
-                            <Badge className="bg-[#E31837]">默认题库</Badge>
+                            <Badge className="bg-[#E31837] text-xs">默认</Badge>
+                          )}
+                          {pool.type === 'exam-season' && (
+                            <Badge className="bg-orange-100 text-orange-700 text-xs">考试季</Badge>
+                          )}
+                          {!pool.isActive && (
+                            <Badge className="bg-gray-100 text-gray-600 text-xs">已禁用</Badge>
                           )}
                         </CardTitle>
                         {pool.description && (
-                          <CardDescription className="mt-1">{pool.description}</CardDescription>
+                          <CardDescription className="mt-1 text-xs">{pool.description}</CardDescription>
                         )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {!pool.isDefault && (
-                          <Button variant="outline" size="sm" onClick={() => setDefaultPool(pool.id)}>
-                            设为默认
-                          </Button>
+                        {pool.period && (
+                          <p className="text-xs text-slate-400 mt-1">{pool.period}</p>
                         )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedPoolForGenerate(pool);
-                            setShowGenerateDialog(true);
-                          }}
-                        >
-                          <Sparkles className="w-4 h-4 mr-1" />
-                          生成题目
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-500 hover:text-red-700"
-                          onClick={() => deletePool(pool.id)}
-                          disabled={pool.isDefault && questionPools.length > 1}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
                       </div>
                     </div>
                   </CardHeader>
                   <CardContent>
-                    <div className="grid grid-cols-4 gap-4 text-center">
-                      <div className="p-3 bg-blue-50 rounded-lg">
-                        <p className="text-2xl font-bold text-blue-600">{pool.part1Count || 0}</p>
+                    <div className="grid grid-cols-4 gap-2 text-center mb-3">
+                      <div className="p-2 bg-blue-50 rounded">
+                        <p className="text-lg font-bold text-blue-600">{pool.part1Count || 0}</p>
                         <p className="text-xs text-slate-500">Part 1</p>
                       </div>
-                      <div className="p-3 bg-green-50 rounded-lg">
-                        <p className="text-2xl font-bold text-green-600">{pool.part2Count || 0}</p>
+                      <div className="p-2 bg-green-50 rounded">
+                        <p className="text-lg font-bold text-green-600">{pool.part2Count || 0}</p>
                         <p className="text-xs text-slate-500">Part 2</p>
                       </div>
-                      <div className="p-3 bg-purple-50 rounded-lg">
-                        <p className="text-2xl font-bold text-purple-600">{pool.part3Count || 0}</p>
+                      <div className="p-2 bg-purple-50 rounded">
+                        <p className="text-lg font-bold text-purple-600">{pool.part3Count || 0}</p>
                         <p className="text-xs text-slate-500">Part 3</p>
                       </div>
-                      <div className="p-3 bg-slate-50 rounded-lg">
-                        <p className="text-2xl font-bold text-slate-600">{(pool.part1Count || 0) + (pool.part2Count || 0) + (pool.part3Count || 0)}</p>
+                      <div className="p-2 bg-slate-50 rounded">
+                        <p className="text-lg font-bold text-slate-600">{(pool.part1Count || 0) + (pool.part2Count || 0) + (pool.part3Count || 0)}</p>
                         <p className="text-xs text-slate-500">总计</p>
                       </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                        onClick={() => openImportDialog(pool.id)}
+                      >
+                        <Upload className="w-3 h-3 mr-1" />
+                        导入
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedPoolForGenerate(pool);
+                          setShowGenerateDialog(true);
+                        }}
+                      >
+                        <Sparkles className="w-3 h-3 mr-1" />
+                        生成
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setEditingPool(pool);
+                          setNewPoolName(pool.name);
+                          setNewPoolDescription(pool.description || '');
+                          setNewPoolType(pool.type || 'general');
+                          setNewPoolPeriod(pool.period || '');
+                          setShowEditPoolDialog(true);
+                        }}
+                      >
+                        <Pencil className="w-3 h-3 mr-1" />
+                        编辑
+                      </Button>
+                      {!pool.isDefault && (
+                        <Button variant="outline" size="sm" onClick={() => setDefaultPool(pool.id)}>
+                          设为默认
+                        </Button>
+                      )}
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        className={pool.isActive ? 'text-orange-600' : 'text-green-600'}
+                        onClick={() => togglePoolStatus(pool)}
+                      >
+                        {pool.isActive ? '禁用' : '启用'}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-500 hover:text-red-700"
+                        onClick={() => deletePool(pool.id)}
+                        disabled={pool.isDefault && questionPools.length > 1}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -7142,7 +7483,7 @@ function AdminView({ onBack }: { onBack: () => void }) {
               <DialogHeader>
                 <DialogTitle>创建新题库</DialogTitle>
                 <DialogDescription>
-                  创建一个新的雅思口语题库，例如 "2026年1-4月题库"
+                  创建一个新的雅思口语题库
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
@@ -7155,6 +7496,47 @@ function AdminView({ onBack }: { onBack: () => void }) {
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label>题库类型</Label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewPoolType('general')}
+                      className={`flex-1 p-3 rounded-lg border text-center transition-all ${
+                        newPoolType === 'general' 
+                          ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500' 
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <BookOpen className="w-5 h-5 mx-auto mb-1 text-slate-600" />
+                      <span className="text-sm font-medium">一般题库</span>
+                      <p className="text-xs text-slate-500">日常练习</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewPoolType('exam-season')}
+                      className={`flex-1 p-3 rounded-lg border text-center transition-all ${
+                        newPoolType === 'exam-season' 
+                          ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-500' 
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <Calendar className="w-5 h-5 mx-auto mb-1 text-slate-600" />
+                      <span className="text-sm font-medium">考试季题库</span>
+                      <p className="text-xs text-slate-500">当季真题</p>
+                    </button>
+                  </div>
+                </div>
+                {newPoolType === 'exam-season' && (
+                  <div className="space-y-2">
+                    <Label>题库周期</Label>
+                    <Input
+                      value={newPoolPeriod}
+                      onChange={(e) => setNewPoolPeriod(e.target.value)}
+                      placeholder="例如：2026年1-4月"
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
                   <Label>描述（可选）</Label>
                   <textarea
                     value={newPoolDescription}
@@ -7165,11 +7547,146 @@ function AdminView({ onBack }: { onBack: () => void }) {
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setShowPoolCreateDialog(false)}>
+                <Button variant="outline" onClick={() => {
+                  setShowPoolCreateDialog(false);
+                  setNewPoolName('');
+                  setNewPoolDescription('');
+                  setNewPoolType('general');
+                  setNewPoolPeriod('');
+                }}>
                   取消
                 </Button>
                 <Button onClick={createQuestionPool} className="bg-[#E31837] hover:bg-[#C4142D]">
                   创建
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* 编辑题库对话框 */}
+          <Dialog open={showEditPoolDialog} onOpenChange={setShowEditPoolDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>编辑题库</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>题库名称 *</Label>
+                  <Input
+                    value={newPoolName}
+                    onChange={(e) => setNewPoolName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>题库类型</Label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNewPoolType('general')}
+                      className={`flex-1 p-3 rounded-lg border text-center transition-all ${
+                        newPoolType === 'general' 
+                          ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500' 
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="text-sm font-medium">一般题库</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewPoolType('exam-season')}
+                      className={`flex-1 p-3 rounded-lg border text-center transition-all ${
+                        newPoolType === 'exam-season' 
+                          ? 'border-orange-500 bg-orange-50 ring-1 ring-orange-500' 
+                          : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <span className="text-sm font-medium">考试季题库</span>
+                    </button>
+                  </div>
+                </div>
+                {newPoolType === 'exam-season' && (
+                  <div className="space-y-2">
+                    <Label>题库周期</Label>
+                    <Input
+                      value={newPoolPeriod}
+                      onChange={(e) => setNewPoolPeriod(e.target.value)}
+                    />
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>描述</Label>
+                  <textarea
+                    value={newPoolDescription}
+                    onChange={(e) => setNewPoolDescription(e.target.value)}
+                    className="w-full min-h-[80px] p-3 border border-slate-200 rounded-lg text-sm"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowEditPoolDialog(false)}>取消</Button>
+                <Button onClick={updateQuestionPool} className="bg-[#E31837] hover:bg-[#C4142D]">保存</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* 导入题目对话框 */}
+          <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>导入题目</DialogTitle>
+                <DialogDescription>
+                  请输入 JSON 格式的题目数组
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label>题目数据 (JSON 格式)</Label>
+                  <textarea 
+                    className="w-full min-h-[250px] p-3 border border-slate-200 rounded-md text-sm font-mono" 
+                    placeholder={`[
+  {
+    "partNumber": 1,
+    "category": "Work",
+    "questionText": "Do you work or are you a student?",
+    "difficulty": "easy"
+  },
+  {
+    "partNumber": 2,
+    "category": "Place",
+    "questionText": "Describe an interesting building...",
+    "difficulty": "medium"
+  }
+]`}
+                    value={importText}
+                    onChange={(e) => setImportText(e.target.value)}
+                  />
+                </div>
+                <div className="text-xs text-slate-500">
+                  <p className="font-medium mb-1">字段说明：</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li><code className="bg-slate-100 px-1 rounded">partNumber</code>: 题目部分 (1, 2, 3)</li>
+                    <li><code className="bg-slate-100 px-1 rounded">category</code>: 题目分类</li>
+                    <li><code className="bg-slate-100 px-1 rounded">questionText</code>: 题目内容</li>
+                    <li><code className="bg-slate-100 px-1 rounded">difficulty</code>: 难度 (easy, medium, hard)</li>
+                  </ul>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowImportDialog(false)}>取消</Button>
+                <Button 
+                  onClick={importQuestions} 
+                  className="bg-[#E31837] hover:bg-[#c41430]"
+                  disabled={!importText.trim() || importing}
+                >
+                  {importing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />导入中...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 mr-2" />导入
+                    </>
+                  )}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -7354,6 +7871,135 @@ function AdminView({ onBack }: { onBack: () => void }) {
               </Card>
             </>
           )}
+        </div>
+      )}
+
+      {/* ===== 登录日志 Tab ===== */}
+      {activeTab === 'logs' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">登录日志</h3>
+              <p className="text-sm text-slate-500">用户登录记录</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <select 
+                value={loginLogFilter} 
+                onChange={(e) => { setLoginLogFilter(e.target.value); loadLoginLogs(e.target.value); }}
+                className="px-3 py-2 border border-slate-200 rounded-md text-sm bg-white"
+              >
+                <option value="all">全部</option>
+                <option value="true">成功</option>
+                <option value="false">失败</option>
+              </select>
+              <Button variant="outline" size="sm" onClick={() => loadLoginLogs(loginLogFilter)}>
+                <RefreshCw className="w-4 h-4 mr-2" />刷新
+              </Button>
+            </div>
+          </div>
+
+          {/* 统计卡片 */}
+          <div className="grid grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                    <LogIn className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-500">今日登录</p>
+                    <p className="text-2xl font-bold">{loginLogStats?.todayLogins || 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                    <Check className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-500">成功登录</p>
+                    <p className="text-2xl font-bold">{loginLogStats?.successCount || 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                    <X className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-500">失败登录</p>
+                    <p className="text-2xl font-bold">{loginLogStats?.failedCount || 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                    <AlertCircle className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-500">今日失败</p>
+                    <p className="text-2xl font-bold">{loginLogStats?.todayFailed || 0}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 日志列表 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">登录记录</CardTitle>
+              <CardDescription>共 {loginLogs.length} 条记录</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {loginLogs.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <LogIn className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>暂无登录记录</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-[400px]">
+                  <div className="space-y-2">
+                    {loginLogs.map((log: any) => (
+                      <div key={log.id} className="flex items-center justify-between p-3 rounded-lg border border-slate-200 bg-white">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${log.success ? 'bg-green-100' : 'bg-red-100'}`}>
+                            {log.success ? <Check className="w-4 h-4 text-green-600" /> : <X className="w-4 h-4 text-red-600" />}
+                          </div>
+                          <div>
+                            <p className="font-medium text-slate-800">{log.username}</p>
+                            {!log.success && log.failReason && <p className="text-xs text-red-500">{log.failReason}</p>}
+                          </div>
+                          <Badge variant="outline" className={log.success ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}>
+                            {log.success ? '成功' : '失败'}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-slate-500">
+                          <div className="text-center">
+                            <p className="flex items-center gap-1"><Globe className="w-3 h-3" />IP</p>
+                            <p className="font-mono">{log.ipAddress || '-'}</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="flex items-center gap-1"><Clock className="w-3 h-3" />时间</p>
+                            <p>{log.createdAt ? new Date(log.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>
