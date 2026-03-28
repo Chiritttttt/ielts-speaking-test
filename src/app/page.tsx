@@ -2214,7 +2214,8 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
   const [expression, setExpression] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'part1' | 'part2' | 'part3'>('overview');
-  const [playingText, setPlayingText] = useState<string | null>(null);
+  const [playingPart, setPlayingPart] = useState<string | null>(null); // 使用 part 标识：'main' | 'part1' | 'part2' | 'part3'
+  const [isPaused, setIsPaused] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -2241,28 +2242,44 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
       audioRef.current.currentTime = 0;
       audioRef.current = null;
     }
-    setPlayingText(null);
+    setPlayingPart(null);
+    setIsPaused(false);
   }, []);
 
-  // 播放发音 - 支持暂停/停止
-  const playAudio = async (text: string) => {
-    // 如果正在播放同一个文本，暂停
-    if (playingText === text && audioRef.current) {
-      if (!audioRef.current.paused) {
+  // 组件卸载时清理
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
         audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  // 播放发音 - 支持暂停/继续
+  const playAudio = async (text: string, partId: string) => {
+    // 如果正在播放同一个 part
+    if (playingPart === partId && audioRef.current) {
+      if (!audioRef.current.paused) {
+        // 正在播放，暂停
+        audioRef.current.pause();
+        setIsPaused(true);
         return;
       } else {
         // 已暂停，继续播放
         await audioRef.current.play();
+        setIsPaused(false);
         return;
       }
     }
 
-    // 播放新文本前，停止当前音频
+    // 播放新的音频前，停止当前音频
     stopCurrentAudio();
 
     try {
-      setPlayingText(text);
+      setPlayingPart(partId);
+      setIsPaused(false);
+      
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2271,7 +2288,7 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
 
       if (!response.ok) {
         toast.error('发音服务暂时不可用');
-        setPlayingText(null);
+        setPlayingPart(null);
         return;
       }
 
@@ -2281,20 +2298,25 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
       audioRef.current = audio;
       
       audio.onended = () => {
-        setPlayingText(null);
+        setPlayingPart(null);
+        setIsPaused(false);
         URL.revokeObjectURL(audioUrl);
+        audioRef.current = null;
       };
       
       audio.onerror = () => {
-        setPlayingText(null);
+        setPlayingPart(null);
+        setIsPaused(false);
         URL.revokeObjectURL(audioUrl);
+        audioRef.current = null;
       };
 
       await audio.play();
     } catch (error) {
       console.error('[TTS] Error:', error);
       toast.error('播放失败');
-      setPlayingText(null);
+      setPlayingPart(null);
+      setIsPaused(false);
     }
   };
 
@@ -2339,6 +2361,10 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
     const [showTranslation, setShowTranslation] = useState(false);
     const [translation, setTranslation] = useState<string | null>(exampleCn);
     const [translating, setTranslating] = useState(false);
+    
+    const partId = `part${part}`;
+    const isThisPlaying = playingPart === partId && !isPaused;
+    const isThisPaused = playingPart === partId && isPaused;
 
     const handleTranslate = async () => {
       if (translation) {
@@ -2387,17 +2413,24 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
             <p className="text-xs text-slate-500 mt-1">{partDesc}</p>
           </div>
           <button
-            onClick={() => playAudio(example)}
+            onClick={() => playAudio(example, partId)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all ${
-              playingText === example 
+              isThisPlaying 
                 ? 'bg-[#E31837] text-white' 
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                : isThisPaused
+                  ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            {playingText === example ? (
+            {isThisPlaying ? (
               <>
                 <Pause className="w-3.5 h-3.5" />
                 暂停
+              </>
+            ) : isThisPaused ? (
+              <>
+                <Play className="w-3.5 h-3.5" />
+                继续
               </>
             ) : (
               <>
@@ -2517,17 +2550,24 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
               )}
             </div>
             <button
-              onClick={() => playAudio(expression.expression)}
+              onClick={() => playAudio(expression.expression, 'main')}
               className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                playingText === expression.expression 
-                  ? 'bg-[#E31837] text-white' 
-                  : 'bg-[#E31837] text-white hover:bg-[#C4142D]'
+                playingPart === 'main' && !isPaused
+                  ? 'bg-slate-700 text-white'
+                  : playingPart === 'main' && isPaused
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-[#E31837] text-white hover:bg-[#C4142D]'
               }`}
             >
-              {playingText === expression.expression ? (
+              {playingPart === 'main' && !isPaused ? (
                 <>
                   <Pause className="w-4 h-4" />
                   暂停
+                </>
+              ) : playingPart === 'main' && isPaused ? (
+                <>
+                  <Play className="w-4 h-4" />
+                  继续
                 </>
               ) : (
                 <>
