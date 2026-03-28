@@ -345,7 +345,7 @@ export default function IELTSSpeakingApp() {
   const [examSeasonCategories, setExamSeasonCategories] = useState<Record<number, string[]>>({ 1: [], 2: [], 3: [] }); // 考试季题库话题
   const [showPoolSelector, setShowPoolSelector] = useState(false);
 
-  // 获取题库列表 - 延迟到需要时加载
+  // 获取题库列表
   const fetchPools = useCallback(async () => {
     if (questionPools.length > 0) return; // 已经加载过就不再重复加载
     try {
@@ -385,7 +385,7 @@ export default function IELTSSpeakingApp() {
     }
   }, [questionPools.length]);
 
-  // Open topic dialog - 在打开对话框时加载题库
+  // Open topic dialog
   const openTopicDialog = (mode: 'part1' | 'part2' | 'part3' | 'full') => {
     setPendingTestMode(mode);
     setSelectedPartTopics({ part1: null, part2: null, part3: null });
@@ -394,8 +394,6 @@ export default function IELTSSpeakingApp() {
     if (examSeasonPools.length === 0) {
       setTopicMode('preset');
     }
-    // 延迟加载题库
-    fetchPools();
     setShowTopicDialog(true);
   };
 
@@ -1369,6 +1367,7 @@ export default function IELTSSpeakingApp() {
   useEffect(() => {
     initUser();
     checkAuthStatus();
+    fetchPools(); // 页面加载时获取题库列表
     // 获取初始版本号
     fetch('/api/version')
       .then(res => res.json())
