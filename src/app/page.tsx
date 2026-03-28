@@ -316,6 +316,10 @@ export default function IELTSSpeakingApp() {
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [showMobileUnlockDialog, setShowMobileUnlockDialog] = useState(false);
   
+  // 版本更新检测
+  const [showUpdateDialog, setShowUpdateDialog] = useState(false);
+  const initialVersionRef = useRef<string | null>(null);
+  
   // 检测移动端
   const isMobile = typeof window !== 'undefined' ? isMobileDevice() : false;
 
@@ -1366,6 +1370,33 @@ export default function IELTSSpeakingApp() {
   useEffect(() => {
     initUser();
     checkAuthStatus();
+    // 获取初始版本号
+    fetch('/api/version')
+      .then(res => res.json())
+      .then(data => {
+        initialVersionRef.current = data.buildTime;
+      })
+      .catch(() => {});
+  }, []);
+
+  // 定期检查版本更新（每5分钟）
+  useEffect(() => {
+    const checkVersion = async () => {
+      if (!initialVersionRef.current) return;
+      try {
+        const response = await fetch('/api/version');
+        const data = await response.json();
+        if (data.buildTime && data.buildTime !== initialVersionRef.current) {
+          setShowUpdateDialog(true);
+        }
+      } catch (error) {
+        // 忽略错误
+      }
+    };
+
+    // 每5分钟检查一次
+    const interval = setInterval(checkVersion, 5 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
   const checkAuthStatus = async () => {
@@ -1946,6 +1977,32 @@ export default function IELTSSpeakingApp() {
           setShowLoginDialog(true);
         }}
       />
+
+      {/* 版本更新提示 */}
+      <Dialog open={showUpdateDialog} onOpenChange={setShowUpdateDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5 text-[#E31837]" />
+              发现新版本
+            </DialogTitle>
+            <DialogDescription>
+              系统已更新，建议刷新页面以获取最新功能和修复。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setShowUpdateDialog(false)}>
+              稍后刷新
+            </Button>
+            <Button 
+              onClick={() => window.location.reload()}
+              className="bg-[#E31837] hover:bg-[#C4142D]"
+            >
+              立即刷新
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Loading indicator */}
       {isLoading && !evaluatingProgress && (
