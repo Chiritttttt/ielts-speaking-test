@@ -78,11 +78,23 @@ function formatTime(seconds: number | undefined | null): string {
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
+// 雅思标准分数处理：0.5 递增
+function roundToHalf(n: number): number {
+  return Math.round(n * 2) / 2;
+}
+
+// 格式化雅思分数显示（确保是标准分）
+function formatBandScore(score: number | undefined | null): string {
+  if (score === undefined || score === null || isNaN(score)) return '6.0';
+  return roundToHalf(score).toFixed(1);
+}
+
 function getBandColor(band: number): string {
-  if (band >= 8) return 'text-green-600 bg-green-50 border-green-200';
-  if (band >= 7) return 'text-emerald-600 bg-emerald-50 border-emerald-200';
-  if (band >= 6) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-  if (band >= 5) return 'text-orange-600 bg-orange-50 border-orange-200';
+  const normalizedBand = roundToHalf(band);
+  if (normalizedBand >= 8) return 'text-green-600 bg-green-50 border-green-200';
+  if (normalizedBand >= 7) return 'text-emerald-600 bg-emerald-50 border-emerald-200';
+  if (normalizedBand >= 6) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+  if (normalizedBand >= 5) return 'text-orange-600 bg-orange-50 border-orange-200';
   return 'text-red-600 bg-red-50 border-red-200';
 }
 
@@ -4387,7 +4399,7 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
         <div className="bg-[#E31837] p-8 text-white text-center">
           <Award className="w-10 h-10 mx-auto mb-3 opacity-90" />
           <h2 className="text-2xl font-semibold mb-1">测试完成</h2>
-          <div className="text-5xl font-bold mt-4">{avgScore?.toFixed(1) || '6.0'}</div>
+          <div className="text-5xl font-bold mt-4">{formatBandScore(avgScore)}</div>
           <p className="text-white/60 mt-1">Band Score</p>
         </div>
       </Card>
@@ -4447,7 +4459,7 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
                     <p className="text-xs text-slate-500">{item.desc}</p>
                   </div>
                   <span className={`text-xl font-bold ${getBandColor(item.score || 6.0).split(' ')[0]}`}>
-                    {(item.score || 6.0).toFixed(1)}
+                    {formatBandScore(item.score)}
                   </span>
                 </div>
                 <Progress value={((item.score || 6.0) / 9) * 100} className="h-2" />
@@ -4466,7 +4478,7 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">问题 {index + 1} (Part {response.partNumber})</CardTitle>
                   <Badge className={getBandColor(response.scores?.overall || 6.0)}>
-                    {(response.scores?.overall || 6.0).toFixed(1)}
+                    {formatBandScore(response.scores?.overall)}
                   </Badge>
                 </div>
                 <p className="text-sm text-slate-600 mt-1">{response.questionText}</p>
@@ -4552,19 +4564,19 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
                 {/* 各项评分 */}
                 <div className="grid grid-cols-4 gap-2 text-center text-xs">
                   <div className="p-2 bg-blue-50 rounded">
-                    <div className="font-bold text-blue-600">{(response.scores?.fluencyCoherence || 6.0).toFixed(1)}</div>
+                    <div className="font-bold text-blue-600">{formatBandScore(response.scores?.fluencyCoherence)}</div>
                     <div className="text-slate-500">FC</div>
                   </div>
                   <div className="p-2 bg-green-50 rounded">
-                    <div className="font-bold text-green-600">{(response.scores?.lexicalResource || 6.0).toFixed(1)}</div>
+                    <div className="font-bold text-green-600">{formatBandScore(response.scores?.lexicalResource)}</div>
                     <div className="text-slate-500">LR</div>
                   </div>
                   <div className="p-2 bg-purple-50 rounded">
-                    <div className="font-bold text-purple-600">{(response.scores?.grammaticalRange || 6.0).toFixed(1)}</div>
+                    <div className="font-bold text-purple-600">{formatBandScore(response.scores?.grammaticalRange)}</div>
                     <div className="text-slate-500">GRA</div>
                   </div>
                   <div className="p-2 bg-orange-50 rounded">
-                    <div className="font-bold text-orange-600">{(response.scores?.pronunciation || 6.0).toFixed(1)}</div>
+                    <div className="font-bold text-orange-600">{formatBandScore(response.scores?.pronunciation)}</div>
                     <div className="text-slate-500">P</div>
                   </div>
                 </div>
@@ -5117,7 +5129,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
               </CardTitle>
               {viewingSession.bandScore && (
                 <Badge className={getBandColor(viewingSession.bandScore)}>
-                  {viewingSession.bandScore.toFixed(1)}
+                  {formatBandScore(viewingSession.bandScore)}
                 </Badge>
               )}
             </div>
@@ -5139,7 +5151,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base">问题 {index + 1} (Part {response.partNumber})</CardTitle>
                   <Badge className={getBandColor(response.overallScore || 6.0)}>
-                    {(response.overallScore || 6.0).toFixed(1)}
+                    {formatBandScore(response.overallScore)}
                   </Badge>
                 </div>
                 <p className="text-sm text-slate-600">{response.questionText}</p>
@@ -5223,19 +5235,19 @@ function HistoryView({ sessions, onBack, onRefresh }: {
                 
                 <div className="grid grid-cols-4 gap-2 text-center text-xs">
                   <div className="p-2 bg-blue-50 rounded">
-                    <div className="font-bold text-blue-600">{(response.fluencyScore || 6.0).toFixed(1)}</div>
+                    <div className="font-bold text-blue-600">{formatBandScore(response.fluencyScore)}</div>
                     <div className="text-slate-500">FC</div>
                   </div>
                   <div className="p-2 bg-green-50 rounded">
-                    <div className="font-bold text-green-600">{(response.vocabularyScore || 6.0).toFixed(1)}</div>
+                    <div className="font-bold text-green-600">{formatBandScore(response.vocabularyScore)}</div>
                     <div className="text-slate-500">LR</div>
                   </div>
                   <div className="p-2 bg-purple-50 rounded">
-                    <div className="font-bold text-purple-600">{(response.grammarScore || 6.0).toFixed(1)}</div>
+                    <div className="font-bold text-purple-600">{formatBandScore(response.grammarScore)}</div>
                     <div className="text-slate-500">GRA</div>
                   </div>
                   <div className="p-2 bg-orange-50 rounded">
-                    <div className="font-bold text-orange-600">{(response.pronunciationScore || 6.0).toFixed(1)}</div>
+                    <div className="font-bold text-orange-600">{formatBandScore(response.pronunciationScore)}</div>
                     <div className="text-slate-500">P</div>
                   </div>
                 </div>
@@ -5435,7 +5447,7 @@ function HistoryView({ sessions, onBack, onRefresh }: {
                     </div>
                     {session.bandScore && (
                       <div className={`text-2xl font-bold px-3 py-1 rounded ${getBandColor(session.bandScore)}`}>
-                        {session.bandScore.toFixed(1)}
+                        {formatBandScore(session.bandScore)}
                       </div>
                     )}
                     <Button
