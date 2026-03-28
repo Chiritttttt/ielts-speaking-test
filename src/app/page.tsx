@@ -3122,6 +3122,13 @@ function TestView({
     console.log('[Audio] Starting to play audio for:', currentQuestion.questionText.substring(0, 50));
     setAudioError(null);
     setIsLoadingAudio(true);
+    setIsPlayingAudio(false);
+    
+    // 安全超时：确保 15 秒后重置加载状态，防止卡死
+    const safetyTimeout = setTimeout(() => {
+      console.log('[Audio] Safety timeout - resetting state');
+      setIsLoadingAudio(false);
+    }, 15000);
     
     try {
       const response = await fetch('/api/tts', {
@@ -3161,9 +3168,14 @@ function TestView({
       const audio = new Audio(audioUrl);
       audioRef.current = audio;
       
+      // 保存当前音频引用，用于检测是否已切换
+      const currentAudio = audio;
+      
       audio.onended = () => {
         console.log('[Audio] Audio ended');
+        clearTimeout(safetyTimeout);
         setIsPlayingAudio(false);
+        setIsLoadingAudio(false);
         URL.revokeObjectURL(audioUrl);
         if (settings.showQuestionAfterSpeech) {
           setShowQuestion(true);
@@ -3171,7 +3183,8 @@ function TestView({
       };
       
       audio.onerror = (e) => {
-        console.error('[Audio] Audio error:', e);
+        console.error('[Audio] Audio element error:', e);
+        clearTimeout(safetyTimeout);
         setIsPlayingAudio(false);
         setIsLoadingAudio(false);
         setAudioError('音频播放失败，请点击"显示"按钮查看题目');
@@ -3191,27 +3204,50 @@ function TestView({
           console.error('[Audio] Audio load error');
           resolve();
         };
+        // 超时保护
+        setTimeout(resolve, 5000);
       });
+      
+      // 检查音频引用是否已改变（用户可能已切换题目）
+      if (audioRef.current !== currentAudio) {
+        console.log('[Audio] Audio reference changed, aborting');
+        clearTimeout(safetyTimeout);
+        URL.revokeObjectURL(audioUrl);
+        setIsLoadingAudio(false);
+        return;
+      }
       
       setIsLoadingAudio(false);
 
-      // 播放音频 - 注意：只在这里设置 isPlayingAudio，而不是之前
+      // 播放音频
+      console.log('[Audio] Calling audio.play()...');
       try {
         await audio.play();
+        clearTimeout(safetyTimeout);
         setIsPlayingAudio(true);
-        console.log('[Audio] Audio started playing');
+        console.log('[Audio] Audio started playing successfully');
       } catch (playError: any) {
         console.error('[Audio] Play error:', playError.name, playError.message);
+        clearTimeout(safetyTimeout);
+        setIsLoadingAudio(false);
+        setIsPlayingAudio(false);
+        
         if (playError.name === 'NotAllowedError') {
           setAudioError('请点击页面任意位置后，再点击播放按钮');
           setNeedsManualPlay(true);
+        } else if (playError.name === 'NotSupportedError') {
+          setAudioError('浏览器不支持此音频格式');
+        } else if (playError.name === 'AbortError') {
+          setAudioError('播放被中断，请重试');
         } else {
           setAudioError('音频播放失败: ' + playError.message);
         }
+        URL.revokeObjectURL(audioUrl);
       }
 
     } catch (error: any) {
       console.error('[Audio] Error:', error);
+      clearTimeout(safetyTimeout);
       setIsLoadingAudio(false);
       setAudioError(error.message || '语音服务暂时不可用，请点击"显示"按钮查看题目');
       if (settings.showQuestionAfterSpeech) {
