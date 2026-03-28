@@ -3151,6 +3151,12 @@ function TestView({
     setIsLoadingAudio(true);
     setIsPlayingAudio(false);
     
+    // 安全超时：确保 10 秒后重置加载状态
+    const safetyTimeout = setTimeout(() => {
+      console.log('[Audio] Safety timeout - resetting loading state');
+      setIsLoadingAudio(false);
+    }, 10000);
+    
     try {
       const response = await fetch('/api/tts', {
         method: 'POST',
@@ -3199,10 +3205,12 @@ function TestView({
       const currentAudioRef = audio;
       
       audio.onended = () => {
+        clearTimeout(safetyTimeout);
         // 只处理当前音频的结束事件
         if (audioRef.current === currentAudioRef) {
           console.log('[Audio] Audio ended');
           setIsPlayingAudio(false);
+          setIsLoadingAudio(false);
           URL.revokeObjectURL(audioUrl);
           if (settings.showQuestionAfterSpeech) {
             setShowQuestion(true);
@@ -3211,6 +3219,7 @@ function TestView({
       };
       
       audio.onerror = (e) => {
+        clearTimeout(safetyTimeout);
         // 只处理当前音频的错误事件
         if (audioRef.current === currentAudioRef) {
           console.error('[Audio] Audio error:', e);
@@ -3221,6 +3230,15 @@ function TestView({
           if (settings.showQuestionAfterSpeech) {
             setShowQuestion(true);
           }
+        }
+      };
+      
+      // 播放状态变化监听
+      audio.onpause = () => {
+        // 如果音频在播放过程中被暂停（非用户操作），重置状态
+        if (audioRef.current === currentAudioRef && !audio.ended) {
+          console.log('[Audio] Audio paused unexpectedly');
+          // 不重置状态，因为可能是用户点击暂停
         }
       };
       
@@ -3235,7 +3253,6 @@ function TestView({
           resolve();
         };
         audio.oncanplaythrough = handleCanPlay;
-        audio.onerror = handleError;
         // 设置超时，避免无限等待
         setTimeout(resolve, 5000);
       });
@@ -3243,6 +3260,7 @@ function TestView({
       // 检查是否仍然是要播放的音频（用户可能已经切换题目）
       if (audioRef.current !== currentAudioRef) {
         console.log('[Audio] Audio reference changed, aborting playback');
+        clearTimeout(safetyTimeout);
         URL.revokeObjectURL(audioUrl);
         setIsLoadingAudio(false);
         return;
@@ -3252,31 +3270,55 @@ function TestView({
 
       // 播放音频
       try {
-        await audio.play();
+        console.log('[Audio] Calling audio.play()...');
+        const playPromise = audio.play();
+        
+        // 等待播放开始
+        await playPromise;
+        
         // 再次检查是否仍然是要播放的音频
         if (audioRef.current === currentAudioRef) {
+          clearTimeout(safetyTimeout);
           setIsPlayingAudio(true);
-          console.log('[Audio] Audio started playing');
+          console.log('[Audio] Audio started playing successfully');
         } else {
           // 已经切换到其他音频，停止这个
+          console.log('[Audio] Audio reference changed during play, stopping');
           audio.pause();
           URL.revokeObjectURL(audioUrl);
+          clearTimeout(safetyTimeout);
         }
       } catch (playError: any) {
         console.error('[Audio] Play error:', playError.name, playError.message);
+        clearTimeout(safetyTimeout);
+        setIsLoadingAudio(false);
+        
         if (audioRef.current === currentAudioRef) {
           if (playError.name === 'NotAllowedError') {
             setAudioError('请点击页面任意位置后，再点击播放按钮');
             setNeedsManualPlay(true);
+          } else if (playError.name === 'NotSupportedError') {
+            setAudioError('音频格式不支持，请点击"显示"按钮查看题目');
+          } else if (playError.name === 'AbortError') {
+            // 播放被中断，通常是正常的（如快速切换）
+            console.log('[Audio] Play was aborted');
+            setAudioError('播放被中断，请重试');
           } else {
             setAudioError('音频播放失败: ' + playError.message);
           }
         }
-        URL.revokeObjectURL(audioUrl);
+        
+        // 清理资源
+        try {
+          URL.revokeObjectURL(audioUrl);
+        } catch (e) {
+          console.warn('[Audio] Error revoking URL:', e);
+        }
       }
 
     } catch (error: any) {
       console.error('[Audio] Error:', error);
+      clearTimeout(safetyTimeout);
       setIsLoadingAudio(false);
       setAudioError(error.message || '语音服务暂时不可用，请点击"显示"按钮查看题目');
       if (settings.showQuestionAfterSpeech) {
