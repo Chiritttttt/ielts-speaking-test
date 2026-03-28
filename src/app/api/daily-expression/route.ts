@@ -91,6 +91,9 @@ export async function GET(request: NextRequest) {
  * 整个词条都会更新，翻译按需生成
  */
 async function generateDailyExpression(date: string) {
+  // 添加随机数确保每次生成不同内容
+  const randomSeed = Math.floor(Math.random() * 10000);
+  
   const prompt = `Generate a daily IELTS idiomatic expression for Chinese learners. Return ONLY valid JSON with this exact structure:
 
 {
@@ -114,8 +117,11 @@ Requirements:
 4. Avoid very informal slang or extremely rare expressions
 5. All Chinese content should be in Simplified Chinese (简体中文)
 6. Examples should clearly show how to use the expression in context
+7. IMPORTANT: Generate a DIFFERENT expression from yesterday. Be creative and varied!
 
-Generate a different expression each time. Today's date is ${date}.`;
+Today's date is ${date}. Random seed: ${randomSeed}. 
+
+DO NOT generate "a double-edged sword" - choose something different and interesting!`;
 
   try {
     const result = await callDeepSeek([
