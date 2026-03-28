@@ -4389,7 +4389,7 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
   };
   
   const avgScore = evaluation.averageScores?.overall || 
-    ((evaluation.averageScores?.fluencyCoherence + evaluation.averageScores?.lexicalResource + 
+    roundToHalf((evaluation.averageScores?.fluencyCoherence + evaluation.averageScores?.lexicalResource + 
       evaluation.averageScores?.grammaticalRange + evaluation.averageScores?.pronunciation) / 4);
 
   return (
