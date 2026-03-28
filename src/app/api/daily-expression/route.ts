@@ -91,6 +91,18 @@ export async function GET(request: NextRequest) {
  * 整个词条都会更新，翻译按需生成
  */
 async function generateDailyExpression(date: string) {
+  // 获取已有的表达，避免重复
+  const existingExpressions = await db.dailyExpression.findMany({
+    select: { expression: true },
+    orderBy: { date: 'desc' },
+    take: 30 // 只查最近30个
+  });
+  
+  const usedExpressions = existingExpressions.map(e => e.expression);
+  const usedExpressionsStr = usedExpressions.length > 0 
+    ? `Already used expressions (DO NOT repeat): ${usedExpressions.join(', ')}` 
+    : '';
+  
   // 添加随机数确保每次生成不同内容
   const randomSeed = Math.floor(Math.random() * 10000);
   
@@ -117,11 +129,12 @@ Requirements:
 4. Avoid very informal slang or extremely rare expressions
 5. All Chinese content should be in Simplified Chinese (简体中文)
 6. Examples should clearly show how to use the expression in context
-7. IMPORTANT: Generate a DIFFERENT expression from yesterday. Be creative and varied!
+7. IMPORTANT: Generate a COMPLETELY DIFFERENT expression from previous ones!
 
-Today's date is ${date}. Random seed: ${randomSeed}. 
+Today's date: ${date}
+Random seed: ${randomSeed}
 
-DO NOT generate "a double-edged sword" - choose something different and interesting!`;
+${usedExpressionsStr}`;
 
   try {
     const result = await callDeepSeek([
