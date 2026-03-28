@@ -2331,7 +2331,6 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
           </div>
           <button
             onClick={() => playAudio(example)}
-            disabled={playingText === example}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm transition-all ${
               playingText === example 
                 ? 'bg-[#E31837] text-white' 
@@ -2340,8 +2339,8 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
           >
             {playingText === example ? (
               <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                播放中...
+                <Pause className="w-3.5 h-3.5" />
+                暂停
               </>
             ) : (
               <>
@@ -2970,6 +2969,23 @@ function TestView({
       return;
     }
     
+    // 如果正在播放，暂停
+    if (audioRef.current && isPlayingAudio) {
+      audioRef.current.pause();
+      setIsPlayingAudio(false);
+      console.log('[Audio] Audio paused');
+      return;
+    }
+    
+    // 如果已暂停，继续播放
+    if (audioRef.current && !isPlayingAudio && audioRef.current.paused && audioRef.current.currentTime > 0) {
+      await audioRef.current.play();
+      setIsPlayingAudio(true);
+      console.log('[Audio] Audio resumed');
+      return;
+    }
+    
+    // 从头开始播放
     console.log('[Audio] Starting to play audio for:', currentQuestion.questionText.substring(0, 50));
     setAudioError(null);
     setIsLoadingAudio(true);
@@ -3048,9 +3064,9 @@ function TestView({
         setShowQuestion(true);
       }
     }
-  }, [currentQuestion?.questionText, settings.defaultVoice, settings.voiceSpeed, settings.showQuestionAfterSpeech]);
+  }, [currentQuestion?.questionText, settings.defaultVoice, settings.voiceSpeed, settings.showQuestionAfterSpeech, isPlayingAudio]);
 
-  // 停止音频播放
+  // 停止音频播放（重置到开头）
   const stopAudio = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.pause();
@@ -3653,10 +3669,21 @@ function AudioPlayer({ audioBase64, audioId, duration, showDownload = false, onG
     
     setError(null);
 
+    // 如果正在播放，暂停
     if (audioRef.current && isPlaying) {
       audioRef.current.pause();
-      audioRef.current = null;
       setIsPlaying(false);
+      return;
+    }
+    
+    // 如果已暂停，继续播放
+    if (audioRef.current && !isPlaying && audioRef.current.paused) {
+      audioRef.current.play().catch((err) => {
+        console.error('Play error:', err);
+        setError('无法播放音频: ' + err.message);
+        setIsPlaying(false);
+      });
+      setIsPlaying(true);
       return;
     }
 
@@ -3725,10 +3752,21 @@ function AudioPlayer({ audioBase64, audioId, duration, showDownload = false, onG
     
     setError(null);
     
+    // 如果正在播放，暂停
     if (modelAudioRef.current && isPlayingModel) {
       modelAudioRef.current.pause();
-      modelAudioRef.current = null;
       setIsPlayingModel(false);
+      return;
+    }
+    
+    // 如果已暂停，继续播放
+    if (modelAudioRef.current && !isPlayingModel && modelAudioRef.current.paused) {
+      modelAudioRef.current.play().catch((err) => {
+        console.error('Model audio play error:', err);
+        setError('无法播放参考回答音频');
+        setIsPlayingModel(false);
+      });
+      setIsPlayingModel(true);
       return;
     }
     
@@ -3815,8 +3853,8 @@ function AudioPlayer({ audioBase64, audioId, duration, showDownload = false, onG
         >
           {isPlaying ? (
             <>
-              <Square className="w-4 h-4" />
-              停止
+              <Pause className="w-4 h-4" />
+              暂停
             </>
           ) : (
             <>
@@ -3848,8 +3886,8 @@ function AudioPlayer({ audioBase64, audioId, duration, showDownload = false, onG
         >
           {isPlayingModel ? (
             <>
-              <Square className="w-4 h-4" />
-              停止参考
+              <Pause className="w-4 h-4" />
+              暂停参考
             </>
           ) : (
             <>
@@ -4056,12 +4094,17 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
 
   // 播放改进建议示例语音
   const playExampleAudio = async (exampleText: string, key: string) => {
-    // 如果正在播放同一个，停止
+    // 如果正在播放同一个，暂停/继续
     if (playingExample === key && exampleAudioRef.current) {
-      exampleAudioRef.current.pause();
-      exampleAudioRef.current = null;
-      setPlayingExample(null);
-      return;
+      if (!exampleAudioRef.current.paused) {
+        // 暂停
+        exampleAudioRef.current.pause();
+        return;
+      } else {
+        // 继续播放
+        exampleAudioRef.current.play();
+        return;
+      }
     }
     
     // 停止之前的播放
@@ -4423,10 +4466,10 @@ function ResultView({ evaluation, onNext, onRetry, sessionId }: {
                         size="sm"
                         onClick={() => playExampleAudio(improvement.example, exampleKey)}
                         className={`shrink-0 ${playingExample === exampleKey ? 'text-amber-600 bg-amber-100' : 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'}`}
-                        title={playingExample === exampleKey ? '停止播放' : '播放示例语音'}
+                        title={playingExample === exampleKey ? '暂停' : '播放示例语音'}
                       >
                         {playingExample === exampleKey ? (
-                          <Square className="w-4 h-4" />
+                          <Pause className="w-4 h-4" />
                         ) : (
                           <Volume2 className="w-4 h-4" />
                         )}
@@ -4758,12 +4801,17 @@ function HistoryView({ sessions, onBack, onRefresh }: {
 
   // 播放改进建议示例语音（历史记录中）
   const playExampleAudioInHistory = async (exampleText: string, key: string) => {
-    // 如果正在播放同一个，停止
+    // 如果正在播放同一个，暂停/继续
     if (playingExample === key && exampleAudioRef.current) {
-      exampleAudioRef.current.pause();
-      exampleAudioRef.current = null;
-      setPlayingExample(null);
-      return;
+      if (!exampleAudioRef.current.paused) {
+        // 暂停
+        exampleAudioRef.current.pause();
+        return;
+      } else {
+        // 继续播放
+        exampleAudioRef.current.play();
+        return;
+      }
     }
     
     // 停止之前的播放
@@ -4997,10 +5045,10 @@ function HistoryView({ sessions, onBack, onRefresh }: {
                                 size="sm"
                                 onClick={() => playExampleAudioInHistory(imp.example, exampleKey)}
                                 className={`shrink-0 h-6 w-6 p-0 ${playingExample === exampleKey ? 'text-amber-600 bg-amber-100' : 'text-amber-500 hover:text-amber-700 hover:bg-amber-50'}`}
-                                title={playingExample === exampleKey ? '停止播放' : '播放示例语音'}
+                                title={playingExample === exampleKey ? '暂停' : '播放示例语音'}
                               >
                                 {playingExample === exampleKey ? (
-                                  <Square className="w-3 h-3" />
+                                  <Pause className="w-3 h-3" />
                                 ) : (
                                   <Volume2 className="w-3 h-3" />
                                 )}
@@ -5608,12 +5656,13 @@ function Part3DiscussionView({
             {/* 音频控制按钮 */}
             <div className="flex items-center justify-center gap-2">
               <Button
-                variant={isPlayingAudio ? "destructive" : "outline"}
+                variant={isPlayingAudio ? "default" : "outline"}
                 size="sm"
-                onClick={isPlayingAudio ? stopAudio : playQuestionAudio}
+                onClick={playQuestionAudio}
+                className={isPlayingAudio ? "bg-indigo-600 hover:bg-indigo-700" : ""}
               >
                 {isPlayingAudio ? (
-                  <><Square className="w-4 h-4 mr-1" />停止</>
+                  <><Pause className="w-4 h-4 mr-1" />暂停</>
                 ) : (
                   <><Volume2 className="w-4 h-4 mr-1" />播放问题</>
                 )}
