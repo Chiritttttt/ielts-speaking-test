@@ -5,8 +5,9 @@ import { callDeepSeek } from '@/lib/deepseek';
 // 获取北京时间日期字符串 (YYYY-MM-DD)
 function getBeijingDate(): string {
   const now = new Date();
-  // 北京时间 = UTC + 8小时
-  const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  // 先转换为 UTC，再加 8 小时得到北京时间（无论服务器时区是什么）
+  const utcTime = now.getTime() + now.getTimezoneOffset() * 60000;
+  const beijingTime = new Date(utcTime + 8 * 60 * 60 * 1000);
   return beijingTime.toISOString().split('T')[0];
 }
 
@@ -15,8 +16,9 @@ function getBeijingDate(): string {
 function shouldUpdate(updatedAt: Date): boolean {
   const now = new Date();
   
-  // 获取北京时间的日期 (YYYY-MM-DD)
-  const beijingTime = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+  // 先转换为 UTC，再加 8 小时得到北京时间（无论服务器时区是什么）
+  const utcTime = now.getTime() + now.getTimezoneOffset() * 60000;
+  const beijingTime = new Date(utcTime + 8 * 60 * 60 * 1000);
   const beijingDate = beijingTime.toISOString().split('T')[0]; // 例如 "2024-01-15"
   
   // 北京时间今天早上8点 = UTC 今天午夜0点
