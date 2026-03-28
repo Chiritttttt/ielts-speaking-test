@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mic, MicOff, Play, Square, ChevronRight, ChevronLeft, RotateCcw,
   BarChart3, TrendingUp, BookOpen, Award, Clock, Target, Lightbulb,
@@ -2267,8 +2266,16 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
         return;
       } else {
         // 已暂停，继续播放
-        await audioRef.current.play();
-        setIsPaused(false);
+        try {
+          await audioRef.current.play();
+          setIsPaused(false);
+        } catch (playError: any) {
+          console.error('[TTS] Resume play error:', playError);
+          toast.error('继续播放失败，请重试');
+          setPlayingPart(null);
+          setIsPaused(false);
+          audioRef.current = null;
+        }
         return;
       }
     }
@@ -2304,14 +2311,31 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
         audioRef.current = null;
       };
       
-      audio.onerror = () => {
+      audio.onerror = (e) => {
+        console.error('[TTS] Audio error:', e);
+        toast.error('音频播放失败，请重试');
         setPlayingPart(null);
         setIsPaused(false);
         URL.revokeObjectURL(audioUrl);
         audioRef.current = null;
       };
 
-      await audio.play();
+      // 移动端需要处理自动播放限制
+      try {
+        await audio.play();
+      } catch (playError: any) {
+        console.error('[TTS] Play error:', playError);
+        // 如果是自动播放限制错误，提示用户
+        if (playError.name === 'NotAllowedError') {
+          toast.error('请点击页面后再次尝试播放');
+        } else {
+          toast.error('播放失败，请重试');
+        }
+        setPlayingPart(null);
+        setIsPaused(false);
+        URL.revokeObjectURL(audioUrl);
+        audioRef.current = null;
+      }
     } catch (error) {
       console.error('[TTS] Error:', error);
       toast.error('播放失败');
@@ -3009,11 +3033,40 @@ function TestView({
   const [audioError, setAudioError] = useState<string | null>(null);
   const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [needsManualPlay, setNeedsManualPlay] = useState(false); // 移动端需要手动播放
+  const [audioUnlocked, setAudioUnlocked] = useState(false); // 移动端音频解锁状态
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const prevQuestionIdRef = useRef<string | null>(null);
   
   // 移动端检测
   const isMobile = typeof window !== 'undefined' ? isMobileDevice() : false;
+
+  // 移动端：首次点击解锁音频
+  useEffect(() => {
+    if (!isMobile || audioUnlocked) return;
+
+    const unlockAudio = async () => {
+      try {
+        // 创建静音音频解锁
+        const audio = new Audio();
+        audio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYGp/7CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYGp/7CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+        audio.volume = 0.01;
+        await audio.play();
+        audio.pause();
+        setAudioUnlocked(true);
+        console.log('[Audio] Mobile audio unlocked');
+      } catch (e) {
+        console.log('[Audio] Mobile audio unlock failed:', e);
+      }
+    };
+
+    document.addEventListener('click', unlockAudio, { once: true });
+    document.addEventListener('touchstart', unlockAudio, { once: true });
+
+    return () => {
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('touchstart', unlockAudio);
+    };
+  }, [isMobile, audioUnlocked]);
 
   // Part 2 准备时间倒计时
   const [isPreparing, setIsPreparing] = useState(false);
@@ -3065,7 +3118,22 @@ function TestView({
       console.error('[Audio] No question text');
       return;
     }
-    
+
+    // 移动端：点击播放按钮时先解锁音频（点击本身就是用户手势）
+    if (isMobile && !audioUnlocked) {
+      try {
+        const unlockAudio = new Audio();
+        unlockAudio.src = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYGp/7CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYGp/7CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+        unlockAudio.volume = 0.01;
+        await unlockAudio.play();
+        unlockAudio.pause();
+        setAudioUnlocked(true);
+        console.log('[Audio] Audio unlocked on play button click');
+      } catch (e) {
+        console.log('[Audio] Unlock failed:', e);
+      }
+    }
+
     // 如果正在播放，暂停
     if (audioRef.current && isPlayingAudio) {
       audioRef.current.pause();
@@ -3073,12 +3141,17 @@ function TestView({
       console.log('[Audio] Audio paused');
       return;
     }
-    
+
     // 如果已暂停，继续播放
     if (audioRef.current && !isPlayingAudio && audioRef.current.paused && audioRef.current.currentTime > 0) {
-      await audioRef.current.play();
-      setIsPlayingAudio(true);
-      console.log('[Audio] Audio resumed');
+      try {
+        await audioRef.current.play();
+        setIsPlayingAudio(true);
+        console.log('[Audio] Audio resumed');
+      } catch (e: any) {
+        console.error('[Audio] Resume failed:', e);
+        setAudioError('播放失败，请重试');
+      }
       return;
     }
     
@@ -3148,10 +3221,22 @@ function TestView({
       
       setIsLoadingAudio(false);
       setIsPlayingAudio(true);
-      
-      await audio.play();
-      console.log('[Audio] Audio started playing');
-      
+
+      // 移动端播放音频，处理自动播放限制
+      try {
+        await audio.play();
+        console.log('[Audio] Audio started playing');
+      } catch (playError: any) {
+        console.error('[Audio] Play error:', playError.name, playError.message);
+        setIsPlayingAudio(false);
+        if (playError.name === 'NotAllowedError') {
+          setAudioError('请点击页面任意位置后，再点击播放按钮');
+          setNeedsManualPlay(true);
+        } else {
+          setAudioError('音频播放失败: ' + playError.message);
+        }
+      }
+
     } catch (error: any) {
       console.error('[Audio] Play error:', error);
       setIsPlayingAudio(false);
@@ -3161,7 +3246,7 @@ function TestView({
         setShowQuestion(true);
       }
     }
-  }, [currentQuestion?.questionText, settings.defaultVoice, settings.voiceSpeed, settings.showQuestionAfterSpeech, isPlayingAudio]);
+  }, [currentQuestion?.questionText, settings.defaultVoice, settings.voiceSpeed, settings.showQuestionAfterSpeech, isPlayingAudio, isMobile, audioUnlocked]);
 
   // 停止音频播放（重置到开头）
   const stopAudio = useCallback(() => {
