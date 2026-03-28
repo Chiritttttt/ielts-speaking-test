@@ -18,8 +18,6 @@
     font-size: 16px;
     -webkit-text-size-adjust: 100%;
     -ms-text-size-adjust: 100%;
-    /* 移动端优化：禁用双击缩放，消除 300ms 点击延迟 */
-    touch-action: manipulation;
   }
 
   html,
@@ -36,34 +34,6 @@
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    /* 移动端触摸优化 */
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    -webkit-touch-callout: none;
-  }
-
-  /* 按钮和链接的触摸优化 */
-  button, a, [role="button"] {
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    /* 防止触摸时文字选中 */
-    -webkit-user-select: none;
-    user-select: none;
-  }
-
-  /* 输入框允许选中 */
-  input, textarea {
-    touch-action: manipulation;
-    -webkit-user-select: text;
-    user-select: text;
-  }
-
-  /* 微信内置浏览器特殊优化 */
-  @supports (-webkit-touch-callout: none) {
-    /* 仅对支持 -webkit-touch-callout 的浏览器（如微信内置浏览器）应用 */
-    button, a, [role="button"] {
-      -webkit-touch-callout: none;
-    }
   }
 }
 
