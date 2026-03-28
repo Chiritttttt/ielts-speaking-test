@@ -9,14 +9,39 @@ import { recordApiUsage } from '@/lib/usage';
 
 const execAsync = promisify(exec);
 
-// Edge TTS 语音映射
+// Edge TTS 语音映射 - 支持多种英语口音
 const EDGE_VOICES: Record<string, string> = {
-  'us-female': 'en-US-AriaNeural',
-  'us-male': 'en-US-GuyNeural',
+  // 英式英语
   'uk-female': 'en-GB-SoniaNeural',
   'uk-male': 'en-GB-RyanNeural',
-  'shimmer': 'en-US-JennyNeural',
-  'fable': 'en-GB-MiaNeural'
+  
+  // 美式英语
+  'us-female': 'en-US-AriaNeural',
+  'us-male': 'en-US-GuyNeural',
+  
+  // 澳大利亚英语
+  'au-female': 'en-AU-NatashaNeural',
+  'au-male': 'en-AU-WilliamNeural',
+  
+  // 印度英语
+  'in-female': 'en-IN-NeerjaNeural',
+  'in-male': 'en-IN-PrabhatNeural',
+  
+  // 爱尔兰英语
+  'ie-female': 'en-IE-EmilyNeural',
+  'ie-male': 'en-IE-ConnorNeural',
+  
+  // 新西兰英语
+  'nz-female': 'en-NZ-MollyNeural',
+  'nz-male': 'en-NZ-MitchellNeural',
+  
+  // 南非英语
+  'za-female': 'en-ZA-LeahNeural',
+  'za-male': 'en-ZA-LukeNeural',
+  
+  // 加拿大英语
+  'ca-female': 'en-CA-ClaraNeural',
+  'ca-male': 'en-CA-LiamNeural',
 };
 
 interface TTSRequest {
@@ -92,10 +117,37 @@ export async function GET() {
   return NextResponse.json({
     engine: 'edge',
     voices: [
+      // 英式英语 - IELTS 推荐
       { id: 'uk-female', name: 'Sonia (British Female)', lang: 'en-GB', recommended: true },
       { id: 'uk-male', name: 'Ryan (British Male)', lang: 'en-GB' },
+      
+      // 美式英语
       { id: 'us-female', name: 'Aria (American Female)', lang: 'en-US' },
       { id: 'us-male', name: 'Guy (American Male)', lang: 'en-US' },
+      
+      // 澳大利亚英语
+      { id: 'au-female', name: 'Natasha (Australian Female)', lang: 'en-AU' },
+      { id: 'au-male', name: 'William (Australian Male)', lang: 'en-AU' },
+      
+      // 印度英语
+      { id: 'in-female', name: 'Neerja (Indian Female)', lang: 'en-IN' },
+      { id: 'in-male', name: 'Prabhat (Indian Male)', lang: 'en-IN' },
+      
+      // 爱尔兰英语
+      { id: 'ie-female', name: 'Emily (Irish Female)', lang: 'en-IE' },
+      { id: 'ie-male', name: 'Connor (Irish Male)', lang: 'en-IE' },
+      
+      // 新西兰英语
+      { id: 'nz-female', name: 'Molly (New Zealand Female)', lang: 'en-NZ' },
+      { id: 'nz-male', name: 'Mitchell (New Zealand Male)', lang: 'en-NZ' },
+      
+      // 南非英语
+      { id: 'za-female', name: 'Leah (South African Female)', lang: 'en-ZA' },
+      { id: 'za-male', name: 'Luke (South African Male)', lang: 'en-ZA' },
+      
+      // 加拿大英语
+      { id: 'ca-female', name: 'Clara (Canadian Female)', lang: 'en-CA' },
+      { id: 'ca-male', name: 'Liam (Canadian Male)', lang: 'en-CA' },
     ]
   });
 }

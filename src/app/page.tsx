@@ -5,11 +5,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mic, MicOff, Play, Square, ChevronRight, ChevronLeft, RotateCcw,
   BarChart3, TrendingUp, BookOpen, Award, Clock, Target, Lightbulb,
-  Volume2, CheckCircle2, AlertCircle, Loader2, History, User, Star,
+  Volume2, VolumeX, CheckCircle2, AlertCircle, Loader2, History, User, Star,
   ArrowRight, RefreshCw, Download, Share2, Database, Plus, Sparkles,
   Eye, Trash2, X, LogOut, Upload, MessageCircle, Shield, Pencil, Languages,
   Key, Users, Check, Copy, Calendar, ExternalLink, Mail, FileText,
-  LayoutDashboard, LogIn, Globe
+  LayoutDashboard, LogIn, Globe, Pause
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -2177,17 +2177,32 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
     fetchExpression();
   }, []);
 
-  // 播放发音
-  const playAudio = async (text: string) => {
-    if (playingText === text) {
-      // 正在播放，停止
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-      setPlayingText(null);
-      return;
+  // 停止当前播放的音频
+  const stopCurrentAudio = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
     }
+    setPlayingText(null);
+  }, []);
+
+  // 播放发音 - 支持暂停/停止
+  const playAudio = async (text: string) => {
+    // 如果正在播放同一个文本，暂停
+    if (playingText === text && audioRef.current) {
+      if (!audioRef.current.paused) {
+        audioRef.current.pause();
+        return;
+      } else {
+        // 已暂停，继续播放
+        await audioRef.current.play();
+        return;
+      }
+    }
+
+    // 播放新文本前，停止当前音频
+    stopCurrentAudio();
 
     try {
       setPlayingText(text);
@@ -2447,7 +2462,6 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
             </div>
             <button
               onClick={() => playAudio(expression.expression)}
-              disabled={playingText === expression.expression}
               className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                 playingText === expression.expression 
                   ? 'bg-[#E31837] text-white' 
@@ -2456,8 +2470,8 @@ function ExpressionView({ onBack }: { onBack: () => void }) {
             >
               {playingText === expression.expression ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  播放中
+                  <Pause className="w-4 h-4" />
+                  暂停
                 </>
               ) : (
                 <>
@@ -5676,10 +5690,30 @@ function SettingsView({ settings, updateSetting, user }: {
   const [renewLoading, setRenewLoading] = useState(false);
 
   const voices = [
+    // 英式英语 - IELTS 推荐
+    { id: 'uk-female', name: '英音女声 🇬🇧', recommended: true },
+    { id: 'uk-male', name: '英音男声 🇬🇧' },
+    // 美式英语
     { id: 'us-female', name: '美音女声 🇺🇸' },
     { id: 'us-male', name: '美音男声 🇺🇸' },
-    { id: 'uk-female', name: '英音女声 🇬🇧' },
-    { id: 'uk-male', name: '英音男声 🇬🇧' },
+    // 印度英语
+    { id: 'in-female', name: '印度女声 🇮🇳' },
+    { id: 'in-male', name: '印度男声 🇮🇳' },
+    // 澳大利亚英语
+    { id: 'au-female', name: '澳音女声 🇦🇺' },
+    { id: 'au-male', name: '澳音男声 🇦🇺' },
+    // 爱尔兰英语
+    { id: 'ie-female', name: '爱尔兰女声 🇮🇪' },
+    { id: 'ie-male', name: '爱尔兰男声 🇮🇪' },
+    // 新西兰英语
+    { id: 'nz-female', name: '新西兰女声 🇳🇿' },
+    { id: 'nz-male', name: '新西兰男声 🇳🇿' },
+    // 南非英语
+    { id: 'za-female', name: '南非女声 🇿🇦' },
+    { id: 'za-male', name: '南非男声 🇿🇦' },
+    // 加拿大英语
+    { id: 'ca-female', name: '加拿大女声 🇨🇦' },
+    { id: 'ca-male', name: '加拿大男声 🇨🇦' },
   ];
 
   // 计算剩余天数
@@ -5809,14 +5843,79 @@ function SettingsView({ settings, updateSetting, user }: {
         </CardHeader>
         <CardContent className="space-y-6">
           <div>
-            <Label className="text-sm font-medium text-slate-700 mb-2 block">默认语音</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {voices.map((voice) => (
-                <Button key={voice.id} size="sm" variant={settings.defaultVoice === voice.id ? 'default' : 'outline'} onClick={() => updateSetting('defaultVoice', voice.id)} className={settings.defaultVoice === voice.id ? 'bg-indigo-600' : ''}>
-                  {voice.name}
-                </Button>
-              ))}
+            <Label className="text-sm font-medium text-slate-700 mb-2 block">
+              默认语音
+              {voices.find(v => v.id === settings.defaultVoice)?.recommended && (
+                <Badge className="ml-2 bg-amber-100 text-amber-700 border-amber-200 text-xs">IELTS推荐</Badge>
+              )}
+            </Label>
+            
+            {/* 英式英语 - IELTS 推荐 */}
+            <div className="mb-3">
+              <p className="text-xs text-slate-500 mb-1.5">🇬🇧 英式英语 (IELTS推荐)</p>
+              <div className="grid grid-cols-2 gap-2">
+                {voices.filter(v => v.id.startsWith('uk-')).map((voice) => (
+                  <Button key={voice.id} size="sm" variant={settings.defaultVoice === voice.id ? 'default' : 'outline'} onClick={() => updateSetting('defaultVoice', voice.id)} className={settings.defaultVoice === voice.id ? 'bg-indigo-600' : ''}>
+                    {voice.name.replace(' 🇬🇧', '')}
+                  </Button>
+                ))}
+              </div>
             </div>
+            
+            {/* 美式英语 */}
+            <div className="mb-3">
+              <p className="text-xs text-slate-500 mb-1.5">🇺🇸 美式英语</p>
+              <div className="grid grid-cols-2 gap-2">
+                {voices.filter(v => v.id.startsWith('us-')).map((voice) => (
+                  <Button key={voice.id} size="sm" variant={settings.defaultVoice === voice.id ? 'default' : 'outline'} onClick={() => updateSetting('defaultVoice', voice.id)} className={settings.defaultVoice === voice.id ? 'bg-indigo-600' : ''}>
+                    {voice.name.replace(' 🇺🇸', '')}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            
+            {/* 其他口音 - 可折叠 */}
+            <details className="group">
+              <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-700 py-2 flex items-center gap-1">
+                <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
+                其他口音 (印度、澳洲等)
+              </summary>
+              <div className="mt-2 space-y-3">
+                {/* 印度英语 */}
+                <div>
+                  <p className="text-xs text-slate-500 mb-1.5">🇮🇳 印度英语</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {voices.filter(v => v.id.startsWith('in-')).map((voice) => (
+                      <Button key={voice.id} size="sm" variant={settings.defaultVoice === voice.id ? 'default' : 'outline'} onClick={() => updateSetting('defaultVoice', voice.id)} className={settings.defaultVoice === voice.id ? 'bg-indigo-600' : ''}>
+                        {voice.name.replace(' 🇮🇳', '')}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                {/* 澳大利亚英语 */}
+                <div>
+                  <p className="text-xs text-slate-500 mb-1.5">🇦🇺 澳大利亚英语</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {voices.filter(v => v.id.startsWith('au-')).map((voice) => (
+                      <Button key={voice.id} size="sm" variant={settings.defaultVoice === voice.id ? 'default' : 'outline'} onClick={() => updateSetting('defaultVoice', voice.id)} className={settings.defaultVoice === voice.id ? 'bg-indigo-600' : ''}>
+                        {voice.name.replace(' 🇦🇺', '')}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                {/* 其他地区 */}
+                <div>
+                  <p className="text-xs text-slate-500 mb-1.5">🌍 其他地区</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {voices.filter(v => !['uk-', 'us-', 'in-', 'au-'].some(p => v.id.startsWith(p))).map((voice) => (
+                      <Button key={voice.id} size="sm" variant={settings.defaultVoice === voice.id ? 'default' : 'outline'} onClick={() => updateSetting('defaultVoice', voice.id)} className={settings.defaultVoice === voice.id ? 'bg-indigo-600' : ''}>
+                        {voice.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </details>
           </div>
           <div>
             <Label className="text-sm font-medium text-slate-700 mb-2 block">语速: {settings.voiceSpeed.toFixed(1)}x</Label>
