@@ -3151,6 +3151,20 @@ function TestView({
     setIsLoadingAudio(true);
     setIsPlayingAudio(false);
     
+    // 关键：在用户点击的同步上下文中创建 Audio 元素并尝试播放静音
+    // 这样可以保持用户交互上下文，避免移动端的自动播放限制
+    let unlockedAudio: HTMLAudioElement | null = null;
+    try {
+      // 创建一个静音音频来解锁播放
+      unlockedAudio = new Audio('data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYGp/7CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAABhgC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAAYYGp/7CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
+      unlockedAudio.volume = 0.01;
+      // 尝试播放静音音频（不等待结果）
+      const unlockPromise = unlockedAudio.play();
+      console.log('[Audio] Audio context unlock initiated');
+    } catch (unlockError) {
+      console.warn('[Audio] Unlock attempt failed (this is often normal):', unlockError);
+    }
+    
     // 安全超时：确保 10 秒后重置加载状态
     const safetyTimeout = setTimeout(() => {
       console.log('[Audio] Safety timeout - resetting loading state');
@@ -3233,28 +3247,15 @@ function TestView({
         }
       };
       
-      // 播放状态变化监听
-      audio.onpause = () => {
-        // 如果音频在播放过程中被暂停（非用户操作），重置状态
-        if (audioRef.current === currentAudioRef && !audio.ended) {
-          console.log('[Audio] Audio paused unexpectedly');
-          // 不重置状态，因为可能是用户点击暂停
-        }
-      };
-      
       // 等待音频加载完成
       await new Promise<void>((resolve) => {
         const handleCanPlay = () => {
           console.log('[Audio] Audio can play through');
           resolve();
         };
-        const handleError = () => {
-          console.error('[Audio] Audio load error');
-          resolve();
-        };
         audio.oncanplaythrough = handleCanPlay;
         // 设置超时，避免无限等待
-        setTimeout(resolve, 5000);
+        setTimeout(resolve, 3000);
       });
       
       // 检查是否仍然是要播放的音频（用户可能已经切换题目）
@@ -3268,53 +3269,50 @@ function TestView({
       
       setIsLoadingAudio(false);
 
-      // 播放音频
-      try {
-        console.log('[Audio] Calling audio.play()...');
-        const playPromise = audio.play();
-        
-        // 等待播放开始
-        await playPromise;
-        
-        // 再次检查是否仍然是要播放的音频
-        if (audioRef.current === currentAudioRef) {
-          clearTimeout(safetyTimeout);
-          setIsPlayingAudio(true);
-          console.log('[Audio] Audio started playing successfully');
-        } else {
-          // 已经切换到其他音频，停止这个
-          console.log('[Audio] Audio reference changed during play, stopping');
-          audio.pause();
-          URL.revokeObjectURL(audioUrl);
-          clearTimeout(safetyTimeout);
-        }
-      } catch (playError: any) {
-        console.error('[Audio] Play error:', playError.name, playError.message);
-        clearTimeout(safetyTimeout);
-        setIsLoadingAudio(false);
-        
-        if (audioRef.current === currentAudioRef) {
-          if (playError.name === 'NotAllowedError') {
-            setAudioError('请点击页面任意位置后，再点击播放按钮');
-            setNeedsManualPlay(true);
-          } else if (playError.name === 'NotSupportedError') {
-            setAudioError('音频格式不支持，请点击"显示"按钮查看题目');
-          } else if (playError.name === 'AbortError') {
-            // 播放被中断，通常是正常的（如快速切换）
-            console.log('[Audio] Play was aborted');
-            setAudioError('播放被中断，请重试');
+      // 播放音频 - 立即执行，不要额外的 await
+      console.log('[Audio] Calling audio.play()...');
+      audio.play()
+        .then(() => {
+          // 再次检查是否仍然是要播放的音频
+          if (audioRef.current === currentAudioRef) {
+            clearTimeout(safetyTimeout);
+            setIsPlayingAudio(true);
+            console.log('[Audio] Audio started playing successfully');
           } else {
-            setAudioError('音频播放失败: ' + playError.message);
+            // 已经切换到其他音频，停止这个
+            console.log('[Audio] Audio reference changed during play, stopping');
+            audio.pause();
+            URL.revokeObjectURL(audioUrl);
+            clearTimeout(safetyTimeout);
           }
-        }
-        
-        // 清理资源
-        try {
-          URL.revokeObjectURL(audioUrl);
-        } catch (e) {
-          console.warn('[Audio] Error revoking URL:', e);
-        }
-      }
+        })
+        .catch((playError: any) => {
+          console.error('[Audio] Play error:', playError.name, playError.message);
+          clearTimeout(safetyTimeout);
+          setIsLoadingAudio(false);
+          
+          if (audioRef.current === currentAudioRef) {
+            if (playError.name === 'NotAllowedError') {
+              setAudioError('请点击页面任意位置后，再点击播放按钮');
+              setNeedsManualPlay(true);
+            } else if (playError.name === 'NotSupportedError') {
+              setAudioError('音频格式不支持，请点击"显示"按钮查看题目');
+            } else if (playError.name === 'AbortError') {
+              // 播放被中断，通常是正常的（如快速切换）
+              console.log('[Audio] Play was aborted');
+              setAudioError('播放被中断，请重试');
+            } else {
+              setAudioError('音频播放失败: ' + playError.message);
+            }
+          }
+          
+          // 清理资源
+          try {
+            URL.revokeObjectURL(audioUrl);
+          } catch (e) {
+            console.warn('[Audio] Error revoking URL:', e);
+          }
+        });
 
     } catch (error: any) {
       console.error('[Audio] Error:', error);
