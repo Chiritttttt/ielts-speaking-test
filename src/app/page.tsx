@@ -3124,12 +3124,6 @@ function TestView({
     setIsLoadingAudio(true);
     setIsPlayingAudio(false);
     
-    // 安全超时：确保 15 秒后重置加载状态，防止卡死
-    const safetyTimeout = setTimeout(() => {
-      console.log('[Audio] Safety timeout - resetting state');
-      setIsLoadingAudio(false);
-    }, 15000);
-    
     try {
       const response = await fetch('/api/tts', {
         method: 'POST',
@@ -3171,9 +3165,9 @@ function TestView({
       // 保存当前音频引用，用于检测是否已切换
       const currentAudio = audio;
       
+      // 播放结束处理
       audio.onended = () => {
         console.log('[Audio] Audio ended');
-        clearTimeout(safetyTimeout);
         setIsPlayingAudio(false);
         setIsLoadingAudio(false);
         URL.revokeObjectURL(audioUrl);
@@ -3182,9 +3176,9 @@ function TestView({
         }
       };
       
+      // 播放错误处理
       audio.onerror = (e) => {
         console.error('[Audio] Audio element error:', e);
-        clearTimeout(safetyTimeout);
         setIsPlayingAudio(false);
         setIsLoadingAudio(false);
         setAudioError('音频播放失败，请点击"显示"按钮查看题目');
@@ -3194,24 +3188,36 @@ function TestView({
         }
       };
       
-      // 等待音频加载完成
+      // 等待音频加载完成 - 使用 addEventListener 避免覆盖
       await new Promise<void>((resolve) => {
-        audio.oncanplaythrough = () => {
+        const handleCanPlay = () => {
           console.log('[Audio] Audio can play through');
+          cleanup();
           resolve();
         };
-        audio.onerror = () => {
-          console.error('[Audio] Audio load error');
-          resolve();
+        const handleError = (e: Event) => {
+          console.error('[Audio] Audio load error event:', e);
+          cleanup();
+          resolve(); // 继续，让后面的 play() 来处理真正的错误
         };
+        const cleanup = () => {
+          audio.removeEventListener('canplaythrough', handleCanPlay);
+          audio.removeEventListener('error', handleError);
+        };
+        
+        audio.addEventListener('canplaythrough', handleCanPlay);
+        audio.addEventListener('error', handleError);
+        
         // 超时保护
-        setTimeout(resolve, 5000);
+        setTimeout(() => {
+          cleanup();
+          resolve();
+        }, 5000);
       });
       
       // 检查音频引用是否已改变（用户可能已切换题目）
       if (audioRef.current !== currentAudio) {
         console.log('[Audio] Audio reference changed, aborting');
-        clearTimeout(safetyTimeout);
         URL.revokeObjectURL(audioUrl);
         setIsLoadingAudio(false);
         return;
@@ -3223,12 +3229,10 @@ function TestView({
       console.log('[Audio] Calling audio.play()...');
       try {
         await audio.play();
-        clearTimeout(safetyTimeout);
         setIsPlayingAudio(true);
         console.log('[Audio] Audio started playing successfully');
       } catch (playError: any) {
         console.error('[Audio] Play error:', playError.name, playError.message);
-        clearTimeout(safetyTimeout);
         setIsLoadingAudio(false);
         setIsPlayingAudio(false);
         
@@ -3247,7 +3251,6 @@ function TestView({
 
     } catch (error: any) {
       console.error('[Audio] Error:', error);
-      clearTimeout(safetyTimeout);
       setIsLoadingAudio(false);
       setAudioError(error.message || '语音服务暂时不可用，请点击"显示"按钮查看题目');
       if (settings.showQuestionAfterSpeech) {
