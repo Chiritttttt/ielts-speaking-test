@@ -6333,6 +6333,17 @@ function AdminView({ onBack }: { onBack: () => void }) {
   const [editingPool, setEditingPool] = useState<any | null>(null);
   const [showEditPoolDialog, setShowEditPoolDialog] = useState(false);
 
+  // 题库题目查看
+  const [viewingPoolQuestions, setViewingPoolQuestions] = useState<any | null>(null);
+  const [poolQuestions, setPoolQuestions] = useState<any[]>([]);
+  const [poolQuestionsLoading, setPoolQuestionsLoading] = useState(false);
+  const [poolQuestionsPart, setPoolQuestionsPart] = useState<number | null>(null);
+
+  // 用户练习详情查看
+  const [viewingUserSession, setViewingUserSession] = useState<any | null>(null);
+  const [userSessionResponses, setUserSessionResponses] = useState<any[]>([]);
+  const [userSessionLoading, setUserSessionLoading] = useState(false);
+
   // ===== 用量统计状态 =====
   const [usageStats, setUsageStats] = useState<any>(null);
   const [usageLoading, setUsageLoading] = useState(false);
@@ -6681,6 +6692,76 @@ function AdminView({ onBack }: { onBack: () => void }) {
     setUserLoginLogs([]);
     setUserSessions([]);
     setUserSessionStats(null);
+  };
+
+  // 查看用户练习详情
+  const viewUserSessionDetail = async (session: any) => {
+    setViewingUserSession(session);
+    setUserSessionLoading(true);
+    setUserSessionResponses([]);
+    try {
+      const response = await fetch(`/api/history/${session.id}`);
+      const data = await response.json();
+      if (data.success) {
+        setUserSessionResponses(data.responses || []);
+      }
+    } catch (error) {
+      console.error('Load session detail error:', error);
+      toast.error('加载练习详情失败');
+    }
+    setUserSessionLoading(false);
+  };
+
+  // 加载题库题目
+  const loadPoolQuestions = async (poolId: string, part?: number) => {
+    setPoolQuestionsLoading(true);
+    setPoolQuestionsPart(part || null);
+    try {
+      let url = `/api/questions?poolId=${poolId}&count=100`;
+      if (part) url += `&part=${part}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.success) {
+        setPoolQuestions(data.questions || []);
+      }
+    } catch (error) {
+      console.error('Load pool questions error:', error);
+      toast.error('加载题目失败');
+    }
+    setPoolQuestionsLoading(false);
+  };
+
+  // 删除单个题目
+  const deleteQuestion = async (questionId: string) => {
+    if (!confirm('确定要删除这道题目吗？')) return;
+
+    try {
+      const response = await fetch(`/api/questions?questionId=${questionId}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success('题目已删除');
+        // 重新加载题目列表
+        if (viewingPoolQuestions) {
+          loadPoolQuestions(viewingPoolQuestions.id, poolQuestionsPart || undefined);
+        }
+        // 更新题库统计
+        loadQuestionPools();
+      } else {
+        toast.error(data.error || '删除失败');
+      }
+    } catch (error) {
+      toast.error('删除失败');
+    }
+  };
+
+  // 打开题库题目查看
+  const openPoolQuestions = (pool: any) => {
+    setViewingPoolQuestions(pool);
+    setPoolQuestions([]);
+    setPoolQuestionsPart(null);
+    loadPoolQuestions(pool.id);
   };
 
   // ===== 题库管理函数 =====
@@ -7819,7 +7900,11 @@ function AdminView({ onBack }: { onBack: () => void }) {
                         <ScrollArea className="h-[260px]">
                           <div className="space-y-2">
                             {userSessions.map((session) => (
-                              <div key={session.id} className="p-3 rounded-lg border border-slate-200 bg-white">
+                              <div 
+                                key={session.id} 
+                                className="p-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer transition-colors"
+                                onClick={() => viewUserSessionDetail(session)}
+                              >
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
                                     <Badge variant="outline">
@@ -7827,7 +7912,7 @@ function AdminView({ onBack }: { onBack: () => void }) {
                                     </Badge>
                                     {session.bandScore && (
                                       <Badge className={getBandColor(session.bandScore)}>
-                                        {session.bandScore.toFixed(1)}
+                                        {formatBandScore(session.bandScore)}
                                       </Badge>
                                     )}
                                     {session.evaluationStatus === 'pending' && (
@@ -7837,13 +7922,19 @@ function AdminView({ onBack }: { onBack: () => void }) {
                                       <Badge className="bg-blue-100 text-blue-700">评估中</Badge>
                                     )}
                                   </div>
-                                  <span className="text-xs text-slate-500">{formatDate(session.startedAt)}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-slate-500">{formatDate(session.startedAt)}</span>
+                                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                                  </div>
                                 </div>
-                                <div className="mt-2 text-xs text-slate-600">
-                                  <p>时长: {session.duration ? formatTime(session.duration) : '-'}</p>
-                                  {session.completedAt && (
-                                    <p>完成: {formatDate(session.completedAt)}</p>
-                                  )}
+                                <div className="mt-2 text-xs text-slate-600 flex items-center justify-between">
+                                  <div>
+                                    <span>时长: {session.duration ? formatTime(session.duration) : '-'}</span>
+                                    {session.completedAt && (
+                                      <span className="ml-3">完成: {formatDate(session.completedAt)}</span>
+                                    )}
+                                  </div>
+                                  <span className="text-indigo-600 text-xs">点击查看详情</span>
                                 </div>
                               </div>
                             ))}
@@ -7854,6 +7945,116 @@ function AdminView({ onBack }: { onBack: () => void }) {
                   )}
                 </div>
               )}
+            </DialogContent>
+          </Dialog>
+
+          {/* 用户练习详情对话框 */}
+          <Dialog open={!!viewingUserSession} onOpenChange={() => setViewingUserSession(null)}>
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  练习详情
+                </DialogTitle>
+                <DialogDescription>
+                  {viewingUserSession && (
+                    <span>
+                      {viewingUserSession.testType === 'full' ? '模拟测试' : `Part ${viewingUserSession.testType.replace('part', '')}`} · 
+                      {formatDate(viewingUserSession.startedAt)}
+                      {viewingUserSession.bandScore && ` · 得分: ${formatBandScore(viewingUserSession.bandScore)}`}
+                    </span>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex-1 overflow-y-auto">
+                {userSessionLoading ? (
+                  <div className="text-center py-8 text-slate-500">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                    加载中...
+                  </div>
+                ) : userSessionResponses.length === 0 ? (
+                  <div className="text-center py-8 text-slate-500">
+                    <AlertCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>暂无练习内容</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {userSessionResponses.map((response: any, index: number) => (
+                      <Card key={response.id || index}>
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-sm">
+                              问题 {index + 1} (Part {response.partNumber})
+                            </CardTitle>
+                            {response.overallScore && (
+                              <Badge className={getBandColor(response.overallScore)}>
+                                {formatBandScore(response.overallScore)}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-600 mt-1">{response.questionText}</p>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          {/* 用户回答 */}
+                          <div>
+                            <Label className="text-xs text-slate-500">用户回答</Label>
+                            <p className="mt-1 text-sm text-slate-700 bg-slate-50 p-2 rounded">
+                              {response.transcription || '无回答'}
+                            </p>
+                          </div>
+                          
+                          {/* 分数详情 */}
+                          {response.fluencyScore && (
+                            <div className="grid grid-cols-4 gap-2 text-center text-xs">
+                              <div className="p-2 bg-blue-50 rounded">
+                                <div className="font-bold text-blue-600">{formatBandScore(response.fluencyScore)}</div>
+                                <div className="text-slate-500">FC</div>
+                              </div>
+                              <div className="p-2 bg-green-50 rounded">
+                                <div className="font-bold text-green-600">{formatBandScore(response.vocabularyScore)}</div>
+                                <div className="text-slate-500">LR</div>
+                              </div>
+                              <div className="p-2 bg-purple-50 rounded">
+                                <div className="font-bold text-purple-600">{formatBandScore(response.grammarScore)}</div>
+                                <div className="text-slate-500">GRA</div>
+                              </div>
+                              <div className="p-2 bg-orange-50 rounded">
+                                <div className="font-bold text-orange-600">{formatBandScore(response.pronunciationScore)}</div>
+                                <div className="text-slate-500">P</div>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* 反馈 */}
+                          {response.feedback && (
+                            <div>
+                              <Label className="text-xs text-slate-500">反馈</Label>
+                              <div className="mt-1 text-sm text-slate-600 bg-amber-50 p-2 rounded">
+                                {typeof response.feedback === 'string' ? response.feedback : JSON.stringify(response.feedback)}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* 参考回答 */}
+                          {response.modelAnswer && (
+                            <div>
+                              <Label className="text-xs text-slate-500">参考回答</Label>
+                              <p className="mt-1 text-sm text-slate-700 bg-green-50 p-2 rounded">
+                                {response.modelAnswer}
+                              </p>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setViewingUserSession(null)}>
+                  关闭
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -7935,6 +8136,15 @@ function AdminView({ onBack }: { onBack: () => void }) {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                        onClick={() => openPoolQuestions(pool)}
+                      >
+                        <Eye className="w-3 h-3 mr-1" />
+                        查看
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
@@ -8395,6 +8605,100 @@ function AdminView({ onBack }: { onBack: () => void }) {
           )}
         </div>
       )}
+
+      {/* 题库题目查看对话框 */}
+      <Dialog open={!!viewingPoolQuestions} onOpenChange={() => setViewingPoolQuestions(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BookOpen className="w-5 h-5" />
+              {viewingPoolQuestions?.name} - 题目列表
+            </DialogTitle>
+            <DialogDescription>
+              共 {poolQuestions.length} 道题目
+            </DialogDescription>
+          </DialogHeader>
+          
+          {/* Part 筛选 */}
+          <div className="flex gap-2">
+            <Button
+              variant={poolQuestionsPart === null ? "default" : "outline"}
+              size="sm"
+              onClick={() => loadPoolQuestions(viewingPoolQuestions?.id)}
+              className={poolQuestionsPart === null ? "bg-[#E31837] hover:bg-[#C4142D]" : ""}
+            >
+              全部
+            </Button>
+            {[1, 2, 3].map((part) => (
+              <Button
+                key={part}
+                variant={poolQuestionsPart === part ? "default" : "outline"}
+                size="sm"
+                onClick={() => loadPoolQuestions(viewingPoolQuestions?.id, part)}
+                className={poolQuestionsPart === part ? "bg-[#E31837] hover:bg-[#C4142D]" : ""}
+              >
+                Part {part}
+              </Button>
+            ))}
+          </div>
+          
+          <div className="flex-1 overflow-y-auto">
+            {poolQuestionsLoading ? (
+              <div className="text-center py-8 text-slate-500">
+                <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                加载中...
+              </div>
+            ) : poolQuestions.length === 0 ? (
+              <div className="text-center py-8 text-slate-500">
+                <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>暂无题目</p>
+                <p className="text-sm mt-1">可以通过"导入"或"生成"按钮添加题目</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {poolQuestions.map((q: any, index: number) => (
+                  <div
+                    key={q.id}
+                    className="p-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant="outline" className="shrink-0">
+                            Part {q.partNumber}
+                          </Badge>
+                          {q.category && (
+                            <Badge variant="outline" className="shrink-0 text-xs">
+                              {q.category}
+                            </Badge>
+                          )}
+                          <span className="text-xs text-slate-400">#{index + 1}</span>
+                        </div>
+                        <p className="text-sm text-slate-700 whitespace-pre-wrap">
+                          {q.questionText}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-500 hover:text-red-700 hover:bg-red-50 shrink-0"
+                        onClick={() => deleteQuestion(q.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewingPoolQuestions(null)}>
+              关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ===== 登录日志 Tab ===== */}
       {activeTab === 'logs' && (

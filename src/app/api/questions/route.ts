@@ -92,7 +92,8 @@ export async function GET(request: NextRequest) {
         id: q.id,
         questionText: q.questionText,
         category: q.category,
-        difficulty: q.difficulty
+        difficulty: q.difficulty,
+        partNumber: q.partNumber
       }))
     });
   } catch (error) {
@@ -100,6 +101,37 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: false,
       error: '获取题目失败'
+    }, { status: 500 });
+  }
+}
+
+// 删除单个题目
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const questionId = searchParams.get('questionId');
+
+    if (!questionId) {
+      return NextResponse.json({
+        success: false,
+        error: '缺少题目ID'
+      }, { status: 400 });
+    }
+
+    // 删除题目
+    await db.questionBank.delete({
+      where: { id: questionId }
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: '题目已删除'
+    });
+  } catch (error) {
+    console.error('Delete question error:', error);
+    return NextResponse.json({
+      success: false,
+      error: '删除题目失败'
     }, { status: 500 });
   }
 }
