@@ -3144,22 +3144,20 @@ function TestView({
       
       const audioUrl = URL.createObjectURL(audioBlob);
       
+      // 停止之前的音频
       if (audioRef.current) {
         audioRef.current.pause();
-        URL.revokeObjectURL(audioRef.current.src);
+        audioRef.current.src = '';
+        audioRef.current = null;
       }
       
       const audio = new Audio(audioUrl);
       audioRef.current = audio;
       
-      audio.oncanplaythrough = () => {
-        console.log('[Audio] Audio can play through');
-        setIsLoadingAudio(false);
-      };
-      
       audio.onended = () => {
         console.log('[Audio] Audio ended');
         setIsPlayingAudio(false);
+        URL.revokeObjectURL(audioUrl);
         if (settings.showQuestionAfterSpeech) {
           setShowQuestion(true);
         }
@@ -3170,21 +3168,33 @@ function TestView({
         setIsPlayingAudio(false);
         setIsLoadingAudio(false);
         setAudioError('音频播放失败，请点击"显示"按钮查看题目');
+        URL.revokeObjectURL(audioUrl);
         if (settings.showQuestionAfterSpeech) {
           setShowQuestion(true);
         }
       };
       
+      // 等待音频加载完成
+      await new Promise<void>((resolve) => {
+        audio.oncanplaythrough = () => {
+          console.log('[Audio] Audio can play through');
+          resolve();
+        };
+        audio.onerror = () => {
+          console.error('[Audio] Audio load error');
+          resolve();
+        };
+      });
+      
       setIsLoadingAudio(false);
-      setIsPlayingAudio(true);
 
-      // 移动端播放音频，处理自动播放限制
+      // 播放音频 - 注意：只在这里设置 isPlayingAudio，而不是之前
       try {
         await audio.play();
+        setIsPlayingAudio(true);
         console.log('[Audio] Audio started playing');
       } catch (playError: any) {
         console.error('[Audio] Play error:', playError.name, playError.message);
-        setIsPlayingAudio(false);
         if (playError.name === 'NotAllowedError') {
           setAudioError('请点击页面任意位置后，再点击播放按钮');
           setNeedsManualPlay(true);
@@ -3194,8 +3204,7 @@ function TestView({
       }
 
     } catch (error: any) {
-      console.error('[Audio] Play error:', error);
-      setIsPlayingAudio(false);
+      console.error('[Audio] Error:', error);
       setIsLoadingAudio(false);
       setAudioError(error.message || '语音服务暂时不可用，请点击"显示"按钮查看题目');
       if (settings.showQuestionAfterSpeech) {
