@@ -6070,6 +6070,12 @@ function AdminView({ onBack }: { onBack: () => void }) {
   const [userFilter, setUserFilter] = useState<string>('all');
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [showUserDialog, setShowUserDialog] = useState(false);
+  // 用户详情 Tab
+  const [userDetailTab, setUserDetailTab] = useState<'info' | 'logins' | 'sessions'>('info');
+  const [userLoginLogs, setUserLoginLogs] = useState<any[]>([]);
+  const [userSessions, setUserSessions] = useState<any[]>([]);
+  const [userDetailLoading, setUserDetailLoading] = useState(false);
+  const [userSessionStats, setUserSessionStats] = useState<any>(null);
 
   // ===== 题库管理状态 =====
   const [questionPools, setQuestionPools] = useState<any[]>([]);
@@ -6401,6 +6407,47 @@ function AdminView({ onBack }: { onBack: () => void }) {
     } catch (error) {
       toast.error('操作失败');
     }
+  };
+
+  // 加载用户登录记录
+  const loadUserLoginLogs = async (userId: string) => {
+    setUserDetailLoading(true);
+    try {
+      const response = await fetch(`/api/admin/login-logs?userId=${userId}&limit=50`);
+      const data = await response.json();
+      if (data.success) {
+        setUserLoginLogs(data.logs);
+      }
+    } catch (error) {
+      console.error('Load user login logs error:', error);
+    }
+    setUserDetailLoading(false);
+  };
+
+  // 加载用户练习记录
+  const loadUserSessions = async (userId: string) => {
+    setUserDetailLoading(true);
+    try {
+      const response = await fetch(`/api/admin/user-sessions?userId=${userId}&limit=50`);
+      const data = await response.json();
+      if (data.success) {
+        setUserSessions(data.sessions);
+        setUserSessionStats(data.stats);
+      }
+    } catch (error) {
+      console.error('Load user sessions error:', error);
+    }
+    setUserDetailLoading(false);
+  };
+
+  // 打开用户详情时加载数据
+  const openUserDetail = (user: any) => {
+    setSelectedUser(user);
+    setShowUserDialog(true);
+    setUserDetailTab('info');
+    setUserLoginLogs([]);
+    setUserSessions([]);
+    setUserSessionStats(null);
   };
 
   // ===== 题库管理函数 =====
@@ -7242,10 +7289,7 @@ function AdminView({ onBack }: { onBack: () => void }) {
                       <div
                         key={user.id}
                         className="flex items-center justify-between p-4 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors cursor-pointer"
-                        onClick={() => {
-                          setSelectedUser(user);
-                          setShowUserDialog(true);
-                        }}
+                        onClick={() => openUserDetail(user)}
                       >
                         <div className="flex items-center gap-4">
                           <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
@@ -7300,12 +7344,13 @@ function AdminView({ onBack }: { onBack: () => void }) {
 
           {/* 用户详情对话框 */}
           <Dialog open={showUserDialog} onOpenChange={setShowUserDialog}>
-            <DialogContent className="max-w-md">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
               <DialogHeader>
                 <DialogTitle>用户详情</DialogTitle>
               </DialogHeader>
               {selectedUser && (
-                <div className="space-y-4 py-4">
+                <div className="space-y-4 py-2 overflow-y-auto flex-1">
+                  {/* 用户基本信息 */}
                   <div className="flex items-center gap-4">
                     <div className="w-16 h-16 rounded-full bg-slate-200 flex items-center justify-center">
                       <span className="text-2xl font-medium text-slate-600">
@@ -7320,106 +7365,260 @@ function AdminView({ onBack }: { onBack: () => void }) {
                       {getStatusBadge(selectedUser.status)}
                     </div>
                   </div>
-                  <hr className="border-slate-200" />
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <p className="text-slate-500 text-xs">邮箱</p>
-                      <p className="font-medium">{selectedUser.email || '-'}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-xs">角色</p>
-                      <p className="font-medium">{selectedUser.role === 'admin' ? '管理员' : '普通用户'}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-xs">注册时间</p>
-                      <p className="font-medium">{formatDate(selectedUser.createdAt)}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-xs">激活时间</p>
-                      <p className="font-medium">{formatDate(selectedUser.activatedAt)}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-xs">过期时间</p>
-                      <p className={`font-medium ${selectedUser.expiresAt && new Date(selectedUser.expiresAt) < new Date() ? 'text-red-500' : ''}`}>
-                        {formatDate(selectedUser.expiresAt)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-xs">注册 IP</p>
-                      <p className="font-medium font-mono text-xs">{selectedUser.registeredIp || '-'}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-xs">测试次数</p>
-                      <p className="font-medium">{selectedUser.testCount || 0}</p>
-                    </div>
+                  
+                  {/* Tab 切换 */}
+                  <div className="flex gap-2 bg-slate-100 p-1 rounded-lg">
+                    <button
+                      onClick={() => setUserDetailTab('info')}
+                      className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                        userDetailTab === 'info' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      基本信息
+                    </button>
+                    <button
+                      onClick={() => { setUserDetailTab('logins'); loadUserLoginLogs(selectedUser.id); }}
+                      className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                        userDetailTab === 'logins' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      登录记录
+                    </button>
+                    <button
+                      onClick={() => { setUserDetailTab('sessions'); loadUserSessions(selectedUser.id); }}
+                      className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                        userDetailTab === 'sessions' ? 'bg-white shadow text-[#E31837]' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      练习记录
+                    </button>
                   </div>
                   
-                  {/* 用户状态提示 */}
-                  {selectedUser.expiresAt && new Date(selectedUser.expiresAt) < new Date() && (
-                    <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
-                      该用户已过期
+                  {/* 基本信息 Tab */}
+                  {userDetailTab === 'info' && (
+                    <>
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <p className="text-slate-500 text-xs">邮箱</p>
+                          <p className="font-medium">{selectedUser.email || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 text-xs">角色</p>
+                          <p className="font-medium">{selectedUser.role === 'admin' ? '管理员' : '普通用户'}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 text-xs">注册时间</p>
+                          <p className="font-medium">{formatDate(selectedUser.createdAt)}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 text-xs">激活时间</p>
+                          <p className="font-medium">{formatDate(selectedUser.activatedAt)}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 text-xs">过期时间</p>
+                          <p className={`font-medium ${selectedUser.expiresAt && new Date(selectedUser.expiresAt) < new Date() ? 'text-red-500' : ''}`}>
+                            {formatDate(selectedUser.expiresAt)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 text-xs">注册 IP</p>
+                          <p className="font-medium font-mono text-xs">{selectedUser.registeredIp || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 text-xs">测试次数</p>
+                          <p className="font-medium">{selectedUser.testCount || 0}</p>
+                        </div>
+                      </div>
+                      
+                      {/* 用户状态提示 */}
+                      {selectedUser.expiresAt && new Date(selectedUser.expiresAt) < new Date() && (
+                        <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+                          该用户已过期
+                        </div>
+                      )}
+                      
+                      <hr className="border-slate-200" />
+                      <div className="flex items-center gap-2">
+                        {selectedUser.status === 'pending' && (
+                          <>
+                            <Button
+                              className="flex-1 bg-green-600 hover:bg-green-700"
+                              onClick={() => approveUser(selectedUser.id)}
+                            >
+                              <Check className="w-4 h-4 mr-2" />
+                              批准用户
+                            </Button>
+                            <Button
+                              variant="outline"
+                              className="flex-1 border-red-200 text-red-600 hover:bg-red-50"
+                              onClick={() => rejectUser(selectedUser.id)}
+                            >
+                              <X className="w-4 h-4 mr-2" />
+                              拒绝
+                            </Button>
+                          </>
+                        )}
+                        {selectedUser.status === 'approved' && (
+                          <Button
+                            variant="outline"
+                            className="flex-1 border-orange-200 text-orange-600 hover:bg-orange-50"
+                            onClick={() => suspendUser(selectedUser.id)}
+                          >
+                            禁用用户
+                          </Button>
+                        )}
+                        {selectedUser.status === 'suspended' && (
+                          <Button
+                            className="flex-1 bg-green-600 hover:bg-green-700"
+                            onClick={() => approveUser(selectedUser.id)}
+                          >
+                            <Check className="w-4 h-4 mr-2" />
+                            解除禁用
+                          </Button>
+                        )}
+                        {selectedUser.status === 'rejected' && (
+                          <Button
+                            className="flex-1 bg-green-600 hover:bg-green-700"
+                            onClick={() => approveUser(selectedUser.id)}
+                          >
+                            <Check className="w-4 h-4 mr-2" />
+                            批准用户
+                          </Button>
+                        )}
+                        {selectedUser.role !== 'admin' && (
+                          <Button
+                            variant="outline"
+                            className="border-red-200 text-red-600 hover:bg-red-50"
+                            onClick={() => deleteUser(selectedUser.id)}
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            删除
+                          </Button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                  
+                  {/* 登录记录 Tab */}
+                  {userDetailTab === 'logins' && (
+                    <div className="space-y-3">
+                      {userDetailLoading ? (
+                        <div className="text-center py-8 text-slate-500">
+                          <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                          加载中...
+                        </div>
+                      ) : userLoginLogs.length === 0 ? (
+                        <div className="text-center py-8 text-slate-500">
+                          <LogIn className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                          <p>暂无登录记录</p>
+                        </div>
+                      ) : (
+                        <ScrollArea className="h-[300px]">
+                          <div className="space-y-2">
+                            {userLoginLogs.map((log) => (
+                              <div key={log.id} className={`p-3 rounded-lg border ${log.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    {log.success ? (
+                                      <CheckCircle2 className="w-4 h-4 text-green-600" />
+                                    ) : (
+                                      <X className="w-4 h-4 text-red-600" />
+                                    )}
+                                    <span className={`text-sm font-medium ${log.success ? 'text-green-700' : 'text-red-700'}`}>
+                                      {log.success ? '登录成功' : '登录失败'}
+                                    </span>
+                                  </div>
+                                  <span className="text-xs text-slate-500">{formatDate(log.createdAt)}</span>
+                                </div>
+                                <div className="mt-1 text-xs text-slate-600 space-y-1">
+                                  <p>IP: <span className="font-mono">{log.ipAddress || '-'}</span></p>
+                                  {!log.success && log.failReason && (
+                                    <p className="text-red-600">原因: {log.failReason}</p>
+                                  )}
+                                  {log.userAgent && (
+                                    <p className="truncate text-slate-400">{log.userAgent}</p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      )}
                     </div>
                   )}
                   
-                  <hr className="border-slate-200" />
-                  <div className="flex items-center gap-2">
-                    {selectedUser.status === 'pending' && (
-                      <>
-                        <Button
-                          className="flex-1 bg-green-600 hover:bg-green-700"
-                          onClick={() => approveUser(selectedUser.id)}
-                        >
-                          <Check className="w-4 h-4 mr-2" />
-                          批准用户
-                        </Button>
-                        <Button
-                          variant="outline"
-                          className="flex-1 border-red-200 text-red-600 hover:bg-red-50"
-                          onClick={() => rejectUser(selectedUser.id)}
-                        >
-                          <X className="w-4 h-4 mr-2" />
-                          拒绝
-                        </Button>
-                      </>
-                    )}
-                    {selectedUser.status === 'approved' && (
-                      <Button
-                        variant="outline"
-                        className="flex-1 border-orange-200 text-orange-600 hover:bg-orange-50"
-                        onClick={() => suspendUser(selectedUser.id)}
-                      >
-                        禁用用户
-                      </Button>
-                    )}
-                    {selectedUser.status === 'suspended' && (
-                      <Button
-                        className="flex-1 bg-green-600 hover:bg-green-700"
-                        onClick={() => approveUser(selectedUser.id)}
-                      >
-                        <Check className="w-4 h-4 mr-2" />
-                        解除禁用
-                      </Button>
-                    )}
-                    {selectedUser.status === 'rejected' && (
-                      <Button
-                        className="flex-1 bg-green-600 hover:bg-green-700"
-                        onClick={() => approveUser(selectedUser.id)}
-                      >
-                        <Check className="w-4 h-4 mr-2" />
-                        批准用户
-                      </Button>
-                    )}
-                    {selectedUser.role !== 'admin' && (
-                      <Button
-                        variant="outline"
-                        className="border-red-200 text-red-600 hover:bg-red-50"
-                        onClick={() => deleteUser(selectedUser.id)}
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        删除
-                      </Button>
-                    )}
-                  </div>
+                  {/* 练习记录 Tab */}
+                  {userDetailTab === 'sessions' && (
+                    <div className="space-y-3">
+                      {/* 练习统计 */}
+                      {userSessionStats && (
+                        <div className="grid grid-cols-4 gap-2 p-3 bg-slate-50 rounded-lg">
+                          <div className="text-center">
+                            <p className="text-lg font-bold text-indigo-600">{userSessionStats.totalSessions || 0}</p>
+                            <p className="text-xs text-slate-500">总练习</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-lg font-bold text-green-600">{userSessionStats.avgBandScore?.toFixed(1) || '-'}</p>
+                            <p className="text-xs text-slate-500">平均分</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-lg font-bold text-blue-600">{userSessionStats.maxBandScore?.toFixed(1) || '-'}</p>
+                            <p className="text-xs text-slate-500">最高分</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-lg font-bold text-orange-600">{userSessionStats.minBandScore?.toFixed(1) || '-'}</p>
+                            <p className="text-xs text-slate-500">最低分</p>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {userDetailLoading ? (
+                        <div className="text-center py-8 text-slate-500">
+                          <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                          加载中...
+                        </div>
+                      ) : userSessions.length === 0 ? (
+                        <div className="text-center py-8 text-slate-500">
+                          <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                          <p>暂无练习记录</p>
+                        </div>
+                      ) : (
+                        <ScrollArea className="h-[260px]">
+                          <div className="space-y-2">
+                            {userSessions.map((session) => (
+                              <div key={session.id} className="p-3 rounded-lg border border-slate-200 bg-white">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="outline">
+                                      {session.testType === 'full' ? '模拟测试' : `Part ${session.testType.replace('part', '')}`}
+                                    </Badge>
+                                    {session.bandScore && (
+                                      <Badge className={getBandColor(session.bandScore)}>
+                                        {session.bandScore.toFixed(1)}
+                                      </Badge>
+                                    )}
+                                    {session.evaluationStatus === 'pending' && (
+                                      <Badge className="bg-yellow-100 text-yellow-700">待评估</Badge>
+                                    )}
+                                    {session.evaluationStatus === 'evaluating' && (
+                                      <Badge className="bg-blue-100 text-blue-700">评估中</Badge>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-slate-500">{formatDate(session.startedAt)}</span>
+                                </div>
+                                <div className="mt-2 text-xs text-slate-600">
+                                  <p>时长: {session.duration ? formatTime(session.duration) : '-'}</p>
+                                  {session.completedAt && (
+                                    <p>完成: {formatDate(session.completedAt)}</p>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </DialogContent>
