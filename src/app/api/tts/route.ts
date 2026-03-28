@@ -66,30 +66,53 @@ async function generateEdgeTTS(text: string, voice: string, speed: number): Prom
   
   const command = `edge-tts --voice "${edgeVoice}" --text "${processedText}" --write-media "${outputPath}" --rate="${rateArg}"`;
   
+  console.log('[TTS] Generating audio:', { 
+    voice: edgeVoice, 
+    textLength: processedText.length,
+    speed: rateArg 
+  });
+  
   try {
+    const startTime = Date.now();
     await execAsync(command, { timeout: 60000 });
     const audioBuffer = await readFile(outputPath);
     try { await unlink(outputPath); } catch {}
+    
+    console.log('[TTS] Generated successfully:', { 
+      size: audioBuffer.byteLength, 
+      duration: `${Date.now() - startTime}ms` 
+    });
+    
     return audioBuffer;
   } catch (error) {
     try { await unlink(outputPath); } catch {}
+    console.error('[TTS] Generation failed:', error);
     throw error;
   }
 }
 
 export async function POST(request: NextRequest) {
+  const requestId = randomUUID().substring(0, 8);
+  console.log(`[TTS ${requestId}] Request received`);
+  
   try {
     const body: TTSRequest = await request.json();
     const { text, voice = 'uk-female', speed = 1.0 } = body;
 
     if (!text) {
+      console.log(`[TTS ${requestId}] No text provided`);
       return NextResponse.json({
         success: false,
         error: 'No text provided'
       }, { status: 400 });
     }
 
+    console.log(`[TTS ${requestId}] Processing: voice=${voice}, text="${text.substring(0, 50)}..."`);
+    
+    const startTime = Date.now();
     const audioBuffer = await generateEdgeTTS(text, voice, speed);
+    
+    console.log(`[TTS ${requestId}] Success: size=${audioBuffer.byteLength}, time=${Date.now() - startTime}ms`);
 
     // 记录 TTS 调用
     recordApiUsage('tts', 'synthesize', { success: true });
@@ -103,7 +126,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('TTS error:', error);
+    console.error(`[TTS ${requestId}] Error:`, error);
     return NextResponse.json({
       success: false,
       error: 'TTS generation failed',
