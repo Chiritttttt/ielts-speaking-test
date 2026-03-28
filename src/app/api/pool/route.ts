@@ -27,31 +27,36 @@ export async function GET(request: NextRequest) {
       ]
     });
 
-    // 如果需要包含题目数量，重新计算
+    // 如果需要包含题目数量，使用单次聚合查询优化
     let result = pools;
     if (includeCount) {
-      const poolsWithCounts = await Promise.all(
-        pools.map(async (pool) => {
-          const counts = await db.questionBank.groupBy({
-            by: ['partNumber'],
-            where: { poolId: pool.id, isActive: true },
-            _count: true
-          });
+      // 使用单次查询获取所有题库的题目数量
+      const allCounts = await db.questionBank.groupBy({
+        by: ['poolId', 'partNumber'],
+        where: { isActive: true },
+        _count: true
+      });
 
-          const part1Count = counts.find(c => c.partNumber === 1)?._count || 0;
-          const part2Count = counts.find(c => c.partNumber === 2)?._count || 0;
-          const part3Count = counts.find(c => c.partNumber === 3)?._count || 0;
+      // 将结果转换为 Map 以便快速查找
+      const countMap = new Map<string, Record<number, number>>();
+      for (const item of allCounts) {
+        if (!item.poolId) continue;
+        if (!countMap.has(item.poolId)) {
+          countMap.set(item.poolId, { 1: 0, 2: 0, 3: 0 });
+        }
+        countMap.get(item.poolId)![item.partNumber] = item._count;
+      }
 
-          return {
-            ...pool,
-            part1Count,
-            part2Count,
-            part3Count,
-            totalCount: part1Count + part2Count + part3Count
-          };
-        })
-      );
-      result = poolsWithCounts;
+      result = pools.map(pool => {
+        const counts = countMap.get(pool.id) || { 1: 0, 2: 0, 3: 0 };
+        return {
+          ...pool,
+          part1Count: counts[1],
+          part2Count: counts[2],
+          part3Count: counts[3],
+          totalCount: counts[1] + counts[2] + counts[3]
+        };
+      });
     }
 
     return NextResponse.json({

@@ -342,47 +342,59 @@ export default function IELTSSpeakingApp() {
   const [examSeasonCategories, setExamSeasonCategories] = useState<Record<number, string[]>>({ 1: [], 2: [], 3: [] }); // 考试季题库话题
   const [showPoolSelector, setShowPoolSelector] = useState(false);
 
-  // 获取题库列表
-  useEffect(() => {
-    const fetchPools = async () => {
-      try {
-        // 获取所有题库
-        const response = await fetch('/api/pool?includeCount=true');
-        const data = await response.json();
-        if (data.success) {
-          const allPools = data.pools || [];
-          setQuestionPools(allPools);
-          
-          // 分类题库
-          const general = allPools.filter((p: any) => p.type === 'general' || !p.type);
-          const examSeason = allPools.filter((p: any) => p.type === 'exam-season');
-          
-          setGeneralPools(general);
-          setExamSeasonPools(examSeason);
-          
-          // 智能选择：优先选择默认题库，如果默认题库没题目则选择有题目的题库
-          const defaultPool = allPools.find((p: any) => p.isDefault);
-          const poolsWithQuestions = allPools.filter((p: any) => (p.totalCount || 0) > 0);
-          
-          if (defaultPool && (defaultPool.totalCount || 0) > 0) {
-            setSelectedPoolId(defaultPool.id);
-          } else if (poolsWithQuestions.length > 0) {
-            setSelectedPoolId(poolsWithQuestions[0].id);
-          } else if (allPools.length > 0) {
-            setSelectedPoolId(allPools[0].id);
-          }
-          
-          // 如果有考试季题库，默认选择第一个
-          if (examSeason.length > 0) {
-            setSelectedExamSeasonPoolId(examSeason[0].id);
-          }
+  // 获取题库列表 - 延迟到需要时加载
+  const fetchPools = useCallback(async () => {
+    if (questionPools.length > 0) return; // 已经加载过就不再重复加载
+    try {
+      // 获取所有题库
+      const response = await fetch('/api/pool?includeCount=true');
+      const data = await response.json();
+      if (data.success) {
+        const allPools = data.pools || [];
+        setQuestionPools(allPools);
+        
+        // 分类题库
+        const general = allPools.filter((p: any) => p.type === 'general' || !p.type);
+        const examSeason = allPools.filter((p: any) => p.type === 'exam-season');
+        
+        setGeneralPools(general);
+        setExamSeasonPools(examSeason);
+        
+        // 智能选择：优先选择默认题库，如果默认题库没题目则选择有题目的题库
+        const defaultPool = allPools.find((p: any) => p.isDefault);
+        const poolsWithQuestions = allPools.filter((p: any) => (p.totalCount || 0) > 0);
+        
+        if (defaultPool && (defaultPool.totalCount || 0) > 0) {
+          setSelectedPoolId(defaultPool.id);
+        } else if (poolsWithQuestions.length > 0) {
+          setSelectedPoolId(poolsWithQuestions[0].id);
+        } else if (allPools.length > 0) {
+          setSelectedPoolId(allPools[0].id);
         }
-      } catch (error) {
-        console.error('[Pools] Fetch error:', error);
+        
+        // 如果有考试季题库，默认选择第一个
+        if (examSeason.length > 0) {
+          setSelectedExamSeasonPoolId(examSeason[0].id);
+        }
       }
-    };
+    } catch (error) {
+      console.error('[Pools] Fetch error:', error);
+    }
+  }, [questionPools.length]);
+
+  // Open topic dialog - 在打开对话框时加载题库
+  const openTopicDialog = (mode: 'part1' | 'part2' | 'part3' | 'full') => {
+    setPendingTestMode(mode);
+    setSelectedPartTopics({ part1: null, part2: null, part3: null });
+    setCustomTopic('');
+    // 如果没有考试季题库，默认选择预设话题模式
+    if (examSeasonPools.length === 0) {
+      setTopicMode('preset');
+    }
+    // 延迟加载题库
     fetchPools();
-  }, []);
+    setShowTopicDialog(true);
+  };
 
   // 当选择考试季题库时，获取该题库的话题列表
   useEffect(() => {
@@ -564,18 +576,6 @@ export default function IELTSSpeakingApp() {
     }
     reset();
     setView('home');
-  };
-
-  // Open topic dialog
-  const openTopicDialog = (mode: 'part1' | 'part2' | 'part3' | 'full') => {
-    setPendingTestMode(mode);
-    setSelectedPartTopics({ part1: null, part2: null, part3: null });
-    setCustomTopic('');
-    // 如果没有考试季题库，默认选择预设话题模式
-    if (examSeasonPools.length === 0) {
-      setTopicMode('preset');
-    }
-    setShowTopicDialog(true);
   };
 
   // Confirm topic and start test
