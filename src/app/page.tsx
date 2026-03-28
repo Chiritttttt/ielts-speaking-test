@@ -1377,14 +1377,15 @@ export default function IELTSSpeakingApp() {
       .catch(() => {});
   }, []);
 
-  // 定期检查版本更新（每5分钟）
+  // 检查版本更新
   useEffect(() => {
     const checkVersion = async () => {
       if (!initialVersionRef.current) return;
       try {
-        const response = await fetch('/api/version');
+        const response = await fetch('/api/version?' + Date.now()); // 避免缓存
         const data = await response.json();
         if (data.buildTime && data.buildTime !== initialVersionRef.current) {
+          console.log('[Version] New version detected:', data.buildTime, 'vs', initialVersionRef.current);
           setShowUpdateDialog(true);
         }
       } catch (error) {
@@ -1392,9 +1393,16 @@ export default function IELTSSpeakingApp() {
       }
     };
 
-    // 每5分钟检查一次
+    // 页面加载后立即检查一次（延迟2秒，等待初始化完成）
+    const initialCheck = setTimeout(checkVersion, 2000);
+    
+    // 之后每5分钟检查一次
     const interval = setInterval(checkVersion, 5 * 60 * 1000);
-    return () => clearInterval(interval);
+    
+    return () => {
+      clearTimeout(initialCheck);
+      clearInterval(interval);
+    };
   }, []);
 
   const checkAuthStatus = async () => {
