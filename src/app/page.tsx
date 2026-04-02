@@ -987,11 +987,26 @@ export default function IELTSSpeakingApp() {
       console.error('[Audio] Failed to save to IndexedDB:', error);
     }
     
-    // 检查是否有 Web Speech API 的备用结果
+    // 检查是否有 Web Speech API 的实时识别结果
     const hasWebSpeechResult = webSpeechBackup && webSpeechBackup.trim().length > 1;
     
+    // ====== 优化策略：Web Speech API 优先，Whisper 异步验证 ======
+    
+    // 如果 Web Speech API 已有结果，立即使用（毫秒级），然后异步请求 Whisper 验证
+    if (hasWebSpeechResult) {
+      console.log('[Transcribe] Using Web Speech API result immediately (fast path)');
+      toast.success('语音识别完成');
+      processTranscription(webSpeechBackup!, base64, audioId);
+      // 后台异步请求 Whisper 进行验证/改进（不阻塞用户）
+      whisperVerifyAndUpgrade(webSpeechBackup!, base64, audioId);
+      return;
+    }
+    
+    // Web Speech API 没有结果时（移动端不支持等），才走 Whisper 路径
+    toast.info('正在识别语音...');
+    
     try {
-      console.log('[Transcribe] Sending audio to Whisper service, duration:', recordingDuration, 's, type:', audioType);
+      console.log('[Transcribe] No Web Speech result, sending audio to Whisper service, duration:', recordingDuration, 's');
       
       const response = await fetch('/api/transcribe', {
         method: 'POST',
@@ -1011,10 +1026,6 @@ export default function IELTSSpeakingApp() {
       
       if (data.success && data.transcription && data.transcription.trim().length > 0) {
         processTranscription(data.transcription, base64, audioId);
-      } else if (hasWebSpeechResult) {
-        console.log('[Transcribe] Using Web Speech API backup result');
-        toast.info('使用浏览器语音识别结果');
-        processTranscription(webSpeechBackup!, base64, audioId);
       } else {
         const errorMsg = data.error || '未检测到语音';
         if (errorMsg.includes('No audio') || errorMsg.includes('empty') || errorMsg.includes('too short')) {
@@ -1028,20 +1039,49 @@ export default function IELTSSpeakingApp() {
       }
     } catch (error: any) {
       console.error('[Transcribe] Error:', error);
-      
-      if (hasWebSpeechResult) {
-        console.log('[Transcribe] Using Web Speech API backup result due to error');
-        toast.info('使用浏览器语音识别结果');
-        processTranscription(webSpeechBackup!, base64, audioId);
-      } else {
-        // 移动端更友好的错误提示
-        const errorMessage = isMobile 
-          ? '语音识别服务暂时不可用。请确保：\n1. 录音时清晰说话\n2. 网络连接正常\n3. 稍后重试'
-          : '语音识别服务出错，请检查 Whisper 服务是否启动';
-        toast.error(errorMessage);
-        setIsLoading(false);
-      }
+      const errorMessage = isMobile 
+        ? '语音识别服务暂时不可用。请确保：\n1. 录音时清晰说话\n2. 网络连接正常\n3. 稍后重试'
+        : '语音识别服务出错，请检查 Whisper 服务是否启动';
+      toast.error(errorMessage);
+      setIsLoading(false);
     }
+  };
+  
+  // 后台异步请求 Whisper 验证/升级 Web Speech 结果（不阻塞 UI）
+  const whisperVerifyAndUpgrade = async (webSpeechText: string, base64: string, audioId?: string) => {
+    try {
+      const response = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioBase64: base64 })
+      });
+      const data = await response.json();
+      
+      if (data.success && data.transcription && data.transcription.trim().length > 1) {
+        // Whisper 结果与 Web Speech 结果差异较大且质量更好时，静默更新
+        const similarity = calculateSimilarity(webSpeechText.toLowerCase(), data.transcription.toLowerCase());
+        if (similarity < 0.7 && data.transcription.trim().length > webSpeechText.trim().length * 0.5) {
+          console.log('[Transcribe] Whisper result differs significantly, updating transcription');
+          const pending = useIELTSStore.getState().pendingTranscriptions;
+          if (pending.length > 0) {
+            const updated = [...pending];
+            updated[updated.length - 1] = { ...updated[updated.length - 1], transcription: data.transcription.trim() };
+            useIELTSStore.setState({ pendingTranscriptions: updated });
+          }
+        }
+      }
+    } catch (error) {
+      console.log('[Transcribe] Whisper background verify skipped:', error instanceof Error ? error.message : 'unknown');
+    }
+  };
+  
+  // 简单文本相似度计算
+  const calculateSimilarity = (a: string, b: string): number => {
+    if (!a || !b) return 0;
+    const setA = new Set(a.split(/\s+/));
+    const setB = new Set(b.split(/\s+/));
+    const intersection = new Set([...setA].filter(x => setB.has(x)));
+    return intersection.size / Math.max(setA.size, setB.size);
   };
 
   const processTranscription = (transcription: string, audioBase64?: string, audioId?: string) => {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { recordApiUsage } from '@/lib/usage';
 
-const WHISPER_SERVICE_URL = process.env.WHISPER_SERVICE_URL || 'http://localhost:5700';
+const WHISPER_SERVICE_URL = process.env.WHISPER_SERVICE_URL || 'http://localhost:8001';
 
 export async function POST(request: NextRequest) {
   try {
