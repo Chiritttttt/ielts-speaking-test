@@ -3055,6 +3055,7 @@ function TestView({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const prevQuestionIdRef = useRef<string | null>(null);
   const isLoadingAudioRef = useRef(false); // 防止重复调用的锁
+  const abortControllerRef = useRef<AbortController | null>(null); // 用于取消 TTS 请求
   
   // 移动端检测
   const isMobile = typeof window !== 'undefined' ? isMobileDevice() : false;
@@ -3137,6 +3138,13 @@ function TestView({
       return;
     }
     
+    // 取消之前未完成的 TTS 请求
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    
     // 设置加载锁
     isLoadingAudioRef.current = true;
     
@@ -3154,7 +3162,8 @@ function TestView({
           text: currentQuestion.questionText,
           voice: settings.defaultVoice,
           speed: settings.voiceSpeed
-        })
+        }),
+        signal: abortController.signal
       });
 
       console.log('[Audio] TTS response status:', response.status);
@@ -3194,6 +3203,7 @@ function TestView({
         setIsPlayingAudio(false);
         setIsLoadingAudio(false);
         URL.revokeObjectURL(audioUrl);
+        audioRef.current = null;
         if (settings.showQuestionAfterSpeech) {
           setShowQuestion(true);
         }
@@ -3298,11 +3308,17 @@ function TestView({
     }
   }, [currentQuestion?.questionText, settings.defaultVoice, settings.voiceSpeed, settings.showQuestionAfterSpeech]);
 
-  // 停止音频播放（重置到开头）
+  // 停止音频播放（重置到开头并清空引用）
   const stopAudio = useCallback(() => {
+    // 取消进行中的 TTS 请求
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
+      audioRef.current = null;
       isLoadingAudioRef.current = false;
       setIsPlayingAudio(false);
       setIsLoadingAudio(false);
@@ -3311,6 +3327,8 @@ function TestView({
 
   // 题目变化时自动播放音频（移动端需要手动触发）
   useEffect(() => {
+    let timer: NodeJS.Timeout | undefined;
+    
     if (currentQuestion && currentQuestion.id !== prevQuestionIdRef.current) {
       prevQuestionIdRef.current = currentQuestion.id;
       
@@ -3330,15 +3348,15 @@ function TestView({
           console.log('[Audio] Mobile device - manual play required');
         } else {
           // 桌面端正常自动播放
-          const timer = setTimeout(() => {
+          timer = setTimeout(() => {
             playQuestionAudio();
           }, 300);
-          return () => clearTimeout(timer);
         }
       }
     }
     
     return () => {
+      if (timer) clearTimeout(timer);
       stopAudio();
     };
   }, [currentQuestion?.id, settings.autoPlayQuestion, playQuestionAudio, stopAudio, pendingCount, currentQuestionIndex, isMobile]);
