@@ -356,6 +356,8 @@ export default function IELTSSpeakingApp() {
   const [selectedExamSeasonPoolId, setSelectedExamSeasonPoolId] = useState<string | null>(null); // 选中的考试季题库
   const [examSeasonCategories, setExamSeasonCategories] = useState<Record<number, string[]>>({ 1: [], 2: [], 3: [] }); // 考试季题库话题
   const [showPoolSelector, setShowPoolSelector] = useState(false);
+  // 使用 ref 追踪当前测试使用的 poolId，避免闭包捕获不到最新值
+  const activePoolIdRef = useRef<string | null>(null);
 
   // 获取题库列表
   const fetchPools = useCallback(async () => {
@@ -633,6 +635,8 @@ export default function IELTSSpeakingApp() {
         : selectedPartTopics[`part${part}` as keyof typeof selectedPartTopics];
     }
     
+    // 记录使用的 poolId，供 Part 切换时使用
+    activePoolIdRef.current = poolIdToUse;
     await fetchQuestions(part, topic, true, poolIdToUse);
     
     setView('test');
@@ -664,6 +668,8 @@ export default function IELTSSpeakingApp() {
       poolIdToUse = selectedExamSeasonPoolId;
     }
     
+    // 记录使用的 poolId，供 Part 切换时使用
+    activePoolIdRef.current = poolIdToUse;
     await fetchQuestions(part, null, true, poolIdToUse);
     
     setView('test');
@@ -958,20 +964,23 @@ export default function IELTSSpeakingApp() {
     toast.info('正在识别语音...');
     
     // 检查录音时长 - 根据 IELTS 标准设置最低时长
+    // 从 store 读取最新的 currentPart，避免闭包值过时
+    const currentPartForCheck = useIELTSStore.getState().currentPart;
     const minDurations: Record<number, number> = {
       1: 5,   // Part 1: 至少 5 秒
       2: 15,  // Part 2: 至少 15 秒
       3: 10   // Part 3: 至少 10 秒
     };
-    const minDuration = minDurations[currentPart] || 3;
+    const minDuration = minDurations[currentPartForCheck] || 3;
+    const durationNow = useIELTSStore.getState().recordingDuration;
     
-    if (recordingDuration && recordingDuration < minDuration) {
-      const suggestions: Record<number, string> = {
-        1: '建议回答 20-30 秒',
-        2: '建议回答 1-2 分钟',
-        3: '建议回答 30-40 秒'
+    if (durationNow && durationNow < minDuration) {
+      const suggestions: Record<number, number> = {
+        1: 20-30,
+        2: 60-120,
+        3: 30-40
       };
-      toast.error(`录音时间太短（${recordingDuration}秒），Part ${currentPart} 至少需要 ${minDuration} 秒。${suggestions[currentPart] || ''}`);
+      toast.error(`录音时间太短（${Math.round(durationNow)}秒），Part ${currentPartForCheck} 至少需要 ${minDuration} 秒。建议回答 ${suggestions[currentPartForCheck] || ''} 秒`);
       setIsLoading(false);
       return;
     }
@@ -981,7 +990,7 @@ export default function IELTSSpeakingApp() {
     try {
       const currentUserId = sessionId || `temp_${Date.now()}`;
       const responseId = `${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      audioId = await indexedDBAudio.saveRecording(currentUserId, responseId, base64, recordingDuration);
+      audioId = await indexedDBAudio.saveRecording(currentUserId, responseId, base64, durationNow);
       console.log('[Audio] Saved to IndexedDB:', audioId);
     } catch (error) {
       console.error('[Audio] Failed to save to IndexedDB:', error);
@@ -1085,14 +1094,22 @@ export default function IELTSSpeakingApp() {
   };
 
   const processTranscription = (transcription: string, audioBase64?: string, audioId?: string) => {
-    const currentQuestion = questions[currentQuestionIndex];
+    // 从 store 读取最新值，避免闭包捕获到过时的值（录音处理是异步的）
+    const storeState = useIELTSStore.getState();
+    const currentQuestion = storeState.questions[storeState.currentQuestionIndex];
+    const currentPartNow = storeState.currentPart;
+    const currentIndex = storeState.currentQuestionIndex;
+    const questionsLen = storeState.questions.length;
+    const testModeNow = storeState.testMode;
+    const duration = storeState.recordingDuration;
+
     if (currentQuestion && transcription.trim().length > 0) {
       const pendingItem: PendingTranscription = {
         questionId: currentQuestion.id,
         questionText: currentQuestion.questionText,
         transcription: transcription.trim(),
-        duration: recordingDuration,
-        partNumber: currentPart,
+        duration: duration,
+        partNumber: currentPartNow,
         audioBase64: audioBase64,
         audioId: audioId
       };
@@ -1104,11 +1121,11 @@ export default function IELTSSpeakingApp() {
     
     setIsLoading(false);
 
-    if (currentQuestionIndex < questions.length - 1) {
+    if (currentIndex < questionsLen - 1) {
       nextQuestion();
     } else {
       // 最后一题录音完毕
-      if (testMode === 'full' && currentPart < 3) {
+      if (testModeNow === 'full' && currentPartNow < 3) {
         // 完整测试：跳转到下一个 Part（不自动评分）
         setTimeout(() => goToNextPart(), 100);
       } else {
@@ -1251,13 +1268,19 @@ export default function IELTSSpeakingApp() {
   };
 
   const goToNextPart = async () => {
-    if (testMode === 'full' && currentPart < 3) {
-      const nextPart = currentPart + 1;
+    // 从 store 读取最新值
+    const storeState = useIELTSStore.getState();
+    const testModeNow = storeState.testMode;
+    const currentPartNow = storeState.currentPart;
+
+    if (testModeNow === 'full' && currentPartNow < 3) {
+      const nextPart = currentPartNow + 1;
       setCurrentPart(nextPart);
-      // 先清空旧题目，避免显示上一个 Part 的残留内容
-      setQuestions([]);
+      // 不再清空 questions，用 isLoading 状态来显示过渡
       toast.info(`正在准备 Part ${nextPart}...`);
-      await fetchQuestions(nextPart, selectedTopic);
+      setIsLoading(true);
+      // 传递 poolId 确保后续 Part 使用正确的题库
+      await fetchQuestions(nextPart, null, true, activePoolIdRef.current);
       toast.success(`已进入 Part ${nextPart}`);
     } else {
       // 完成测试，跳转到完成页面
@@ -1544,20 +1567,23 @@ export default function IELTSSpeakingApp() {
           onStopRecording={stopRecording}
           onPrevQuestion={prevQuestion}
           onNextQuestion={() => {
-            if (currentQuestionIndex < questions.length - 1) {
+            // 从 store 读取最新值，避免闭包捕获到过时的值
+            const storeState = useIELTSStore.getState();
+            if (storeState.currentQuestionIndex < storeState.questions.length - 1) {
               nextQuestion();
             } else {
-              // 最后一题：检查当前 Part 是否全部完成，跳转到完成页面
-              const allPending = useIELTSStore.getState().pendingTranscriptions;
-              const currentPartPending = allPending.filter(p => p.partNumber === currentPart).length;
-              if (currentPartPending >= questions.length) {
-                if (testMode === 'full' && currentPart < 3) {
+              // 最后一题：检查当前 Part 是否全部完成
+              const allPending = storeState.pendingTranscriptions;
+              const currentPartNow = storeState.currentPart;
+              const currentPartPending = allPending.filter(p => p.partNumber === currentPartNow).length;
+              if (currentPartPending >= storeState.questions.length) {
+                if (storeState.testMode === 'full' && currentPartNow < 3) {
                   goToNextPart();
                 } else {
                   setView('completed');
                 }
               } else {
-                toast.warning(`请完成所有题目的录音（还剩 ${questions.length - currentPartPending} 题）`);
+                toast.warning(`请完成所有题目的录音（还剩 ${storeState.questions.length - currentPartPending} 题）`);
               }
             }
           }}
@@ -3381,10 +3407,14 @@ function TestView({
       setNeedsManualPlay(false);
       
       // 检查当前题目是否已被回答
-      // 只统计当前 Part 的已回答数量，避免跨 Part 干扰
+      // 通过 questionId 精确匹配，而非简单计数（支持非顺序录音）
       const allPending = useIELTSStore.getState().pendingTranscriptions;
       const currentPartPendingCount = allPending.filter((p: PendingTranscription) => p.partNumber === currentPart).length;
-      setCurrentQuestionRecorded(currentPartPendingCount > currentQuestionIndex);
+      const currentQuestionId = currentQuestion?.id;
+      const isCurrentQuestionRecorded = currentQuestionId
+        ? allPending.some((p: PendingTranscription) => p.questionId === currentQuestionId)
+        : currentPartPendingCount > currentQuestionIndex;
+      setCurrentQuestionRecorded(isCurrentQuestionRecorded);
       
       // 自动播放音频（移动端跳过自动播放，需要用户手动触发）
       if (settings.autoPlayQuestion) {
@@ -3411,9 +3441,14 @@ function TestView({
   useEffect(() => {
     const allPending = useIELTSStore.getState().pendingTranscriptions;
     const currentPartPendingCount = allPending.filter((p: PendingTranscription) => p.partNumber === currentPart).length;
-    setCurrentQuestionRecorded(currentPartPendingCount > currentQuestionIndex);
+    // 通过 questionId 精确匹配当前题目是否已录音
+    const currentQ = questions[currentQuestionIndex];
+    const isRecorded = currentQ?.id
+      ? allPending.some((p: PendingTranscription) => p.questionId === currentQ.id)
+      : currentPartPendingCount > currentQuestionIndex;
+    setCurrentQuestionRecorded(isRecorded);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingCount, currentQuestionIndex, currentPart]);
+  }, [pendingCount, currentQuestionIndex, currentPart, questions]);
 
   // 组件卸载时清理音频
   useEffect(() => {
@@ -3424,6 +3459,22 @@ function TestView({
       }
     };
   }, []);
+
+  // Part 切换过渡状态
+  const [isPartTransitioning, setIsPartTransitioning] = useState(false);
+  const prevPartRef2 = useRef(currentPart);
+  
+  useEffect(() => {
+    if (prevPartRef2.current !== currentPart) {
+      prevPartRef2.current = currentPart;
+      setIsPartTransitioning(true);
+      const timer = setTimeout(() => setIsPartTransitioning(false), 3000);
+      return () => clearTimeout(timer);
+    }
+    if (isPartTransitioning && currentQuestion && !isLoading) {
+      setIsPartTransitioning(false);
+    }
+  }, [currentPart, isPartTransitioning, currentQuestion, isLoading]);
 
   // 浏览器不兼容提示
   if (browserSupport.checked && !browserSupport.supported) {
@@ -3448,6 +3499,19 @@ function TestView({
           <p className="text-xs text-slate-400">
             建议使用：微信扫一扫 / Chrome 浏览器 / Safari 浏览器
           </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Part 切换加载状态
+  if (isLoading && !currentQuestion) {
+    return (
+      <Card>
+        <CardContent className="pt-12 pb-12 text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto text-[#E31837]" />
+          <p className="text-sm text-slate-600 mt-4 font-medium">正在准备 Part {currentPart}...</p>
+          <p className="text-xs text-slate-400 mt-2">请稍候</p>
         </CardContent>
       </Card>
     );
