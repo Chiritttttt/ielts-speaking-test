@@ -1107,18 +1107,15 @@ export default function IELTSSpeakingApp() {
     if (currentQuestionIndex < questions.length - 1) {
       nextQuestion();
     } else {
+      // 最后一题录音完毕
       if (testMode === 'full' && currentPart < 3) {
+        // 完整测试：跳转到下一个 Part（不自动评分）
         setTimeout(() => goToNextPart(), 100);
       } else {
+        // 非完整测试 或 Part 3 完成：跳转到完成页面（让用户手动点击评分）
         setTimeout(() => {
-          const pending = useIELTSStore.getState().pendingTranscriptions;
-          if (pending.length > 0) {
-            // 启动后台评估，不阻塞 UI
-            startBackgroundEvaluation();
-          } else {
-            toast.error('没有待评估的回答');
-          }
-        }, 100);
+          setView('completed');
+        }, 300);
       }
     }
   };
@@ -1257,9 +1254,11 @@ export default function IELTSSpeakingApp() {
     if (testMode === 'full' && currentPart < 3) {
       const nextPart = currentPart + 1;
       setCurrentPart(nextPart);
+      // 先清空旧题目，避免显示上一个 Part 的残留内容
+      setQuestions([]);
+      toast.info(`正在准备 Part ${nextPart}...`);
       await fetchQuestions(nextPart, selectedTopic);
-      setView('test');
-      toast.info(`进入 Part ${nextPart}`);
+      toast.success(`已进入 Part ${nextPart}`);
     } else {
       // 完成测试，跳转到完成页面
       setView('completed');
@@ -1548,17 +1547,22 @@ export default function IELTSSpeakingApp() {
             if (currentQuestionIndex < questions.length - 1) {
               nextQuestion();
             } else {
-              const pending = useIELTSStore.getState().pendingTranscriptions;
-              if (pending.length === questions.length) {
-                // 使用后台评估，不阻塞 UI
-                startBackgroundEvaluation();
+              // 最后一题：检查当前 Part 是否全部完成，跳转到完成页面
+              const allPending = useIELTSStore.getState().pendingTranscriptions;
+              const currentPartPending = allPending.filter(p => p.partNumber === currentPart).length;
+              if (currentPartPending >= questions.length) {
+                if (testMode === 'full' && currentPart < 3) {
+                  goToNextPart();
+                } else {
+                  setView('completed');
+                }
               } else {
-                toast.warning('请完成所有题目的录音后再评分');
+                toast.warning(`请完成所有题目的录音（还剩 ${questions.length - currentPartPending} 题）`);
               }
             }
           }}
           testMode={testMode}
-          pendingCount={pendingTranscriptions.length}
+          pendingCount={pendingTranscriptions.filter(p => p.partNumber === currentPart).length}
           sessionId={sessionId}
           settings={settings}
           updateSetting={updateSetting}
@@ -3377,8 +3381,10 @@ function TestView({
       setNeedsManualPlay(false);
       
       // 检查当前题目是否已被回答
-      // 通过 pendingCount 判断：如果 pendingCount > currentQuestionIndex，说明当前题目已回答
-      setCurrentQuestionRecorded(pendingCount > currentQuestionIndex);
+      // 只统计当前 Part 的已回答数量，避免跨 Part 干扰
+      const allPending = useIELTSStore.getState().pendingTranscriptions;
+      const currentPartPendingCount = allPending.filter((p: PendingTranscription) => p.partNumber === currentPart).length;
+      setCurrentQuestionRecorded(currentPartPendingCount > currentQuestionIndex);
       
       // 自动播放音频（移动端跳过自动播放，需要用户手动触发）
       if (settings.autoPlayQuestion) {
@@ -3401,10 +3407,13 @@ function TestView({
     };
   }, [currentQuestion?.id, settings.autoPlayQuestion, playQuestionAudio, stopAudio, pendingCount, currentQuestionIndex, isMobile]);
 
-  // 当 pendingCount 变化时，更新当前题目是否已回答
+  // 当 pendingTranscriptions 变化时，更新当前题目是否已回答（只看当前 Part）
   useEffect(() => {
-    setCurrentQuestionRecorded(pendingCount > currentQuestionIndex);
-  }, [pendingCount, currentQuestionIndex]);
+    const allPending = useIELTSStore.getState().pendingTranscriptions;
+    const currentPartPendingCount = allPending.filter((p: PendingTranscription) => p.partNumber === currentPart).length;
+    setCurrentQuestionRecorded(currentPartPendingCount > currentQuestionIndex);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCount, currentQuestionIndex, currentPart]);
 
   // 组件卸载时清理音频
   useEffect(() => {
