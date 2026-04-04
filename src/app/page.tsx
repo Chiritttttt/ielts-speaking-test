@@ -670,7 +670,30 @@ export default function IELTSSpeakingApp() {
     
     // 记录使用的 poolId，供 Part 切换时使用
     activePoolIdRef.current = poolIdToUse;
-    await fetchQuestions(part, null, true, poolIdToUse);
+    
+    // 考试季话题模式：从题库已有话题中随机选择，而非硬编码 TOPICS
+    let randomTopic: string | null = null;
+    if (topicMode === 'exam-season' && poolIdToUse) {
+      try {
+        const catResponse = await fetch(`/api/questions?getCategories=true&poolId=${poolIdToUse}`);
+        const catData = await catResponse.json();
+        if (catData.success && catData.categories) {
+          // 获取当前 Part 的话题列表
+          const partCategories = catData.categories[part] || catData.categories[1] || [];
+          if (partCategories.length > 0) {
+            randomTopic = partCategories[Math.floor(Math.random() * partCategories.length)];
+            console.log('[StartTest] Random exam-season topic:', randomTopic);
+          }
+        }
+        if (!randomTopic) {
+          toast.warning('考试季题库暂无话题，将从预设话题中随机选择');
+        }
+      } catch (error) {
+        console.error('[StartTest] Failed to fetch exam-season categories:', error);
+      }
+    }
+    
+    await fetchQuestions(part, randomTopic, true, poolIdToUse);
     
     setView('test');
     setPendingTestMode(null);
@@ -1285,11 +1308,28 @@ export default function IELTSSpeakingApp() {
     if (testModeNow === 'full' && currentPartNow < 3) {
       const nextPart = currentPartNow + 1;
       setCurrentPart(nextPart);
-      // 不再清空 questions，用 isLoading 状态来显示过渡
       toast.info(`正在准备 Part ${nextPart}...`);
       setIsLoading(true);
-      // 传递 poolId 确保后续 Part 使用正确的题库
-      await fetchQuestions(nextPart, null, true, activePoolIdRef.current);
+      
+      // 考试季话题模式：从题库已有话题中随机选择
+      let nextTopic: string | null = null;
+      if (topicMode === 'exam-season' && activePoolIdRef.current) {
+        try {
+          const catResponse = await fetch(`/api/questions?getCategories=true&poolId=${activePoolIdRef.current}`);
+          const catData = await catResponse.json();
+          if (catData.success && catData.categories) {
+            const partCategories = catData.categories[nextPart] || [];
+            if (partCategories.length > 0) {
+              nextTopic = partCategories[Math.floor(Math.random() * partCategories.length)];
+            }
+          }
+        } catch (error) {
+          console.error('[GoToNextPart] Failed to fetch categories:', error);
+        }
+      }
+      
+      // 传递 poolId 和随机话题
+      await fetchQuestions(nextPart, nextTopic, true, activePoolIdRef.current);
       toast.success(`已进入 Part ${nextPart}`);
     } else {
       // 完成测试，跳转到完成页面
