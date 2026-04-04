@@ -1067,16 +1067,25 @@ export default function IELTSSpeakingApp() {
       const data = await response.json();
       
       if (data.success && data.transcription && data.transcription.trim().length > 1) {
-        // Whisper 结果与 Web Speech 结果差异较大且质量更好时，静默更新
-        const similarity = calculateSimilarity(webSpeechText.toLowerCase(), data.transcription.toLowerCase());
-        if (similarity < 0.7 && data.transcription.trim().length > webSpeechText.trim().length * 0.5) {
-          console.log('[Transcribe] Whisper result differs significantly, updating transcription');
+        const whisperText = data.transcription.trim();
+        const similarity = calculateSimilarity(webSpeechText.toLowerCase(), whisperText.toLowerCase());
+        
+        // Whisper (base模型) 通常比 Web Speech API 更准确
+        // 策略：Whisper 结果质量好时直接替换，只在高度一致时保留 Web Speech 结果
+        if (similarity >= 0.9) {
+          // 两者高度一致，保留 Web Speech 即可（响应更快）
+          console.log('[Transcribe] Whisper result matches Web Speech, keeping original');
+        } else if (whisperText.length >= webSpeechText.trim().length * 0.3) {
+          // Whisper 有合理输出，优先使用 Whisper 结果（更准确）
+          console.log(`[Transcribe] Upgrading to Whisper result (similarity: ${similarity.toFixed(2)})`);
           const pending = useIELTSStore.getState().pendingTranscriptions;
           if (pending.length > 0) {
             const updated = [...pending];
-            updated[updated.length - 1] = { ...updated[updated.length - 1], transcription: data.transcription.trim() };
+            updated[updated.length - 1] = { ...updated[updated.length - 1], transcription: whisperText };
             useIELTSStore.setState({ pendingTranscriptions: updated });
           }
+        } else {
+          console.log(`[Transcribe] Whisper result too short, keeping Web Speech result`);
         }
       }
     } catch (error) {

@@ -21,7 +21,7 @@ except ImportError:
 
 # Configuration
 PORT = int(os.environ.get("WHISPER_PORT", 8001))
-MODEL_SIZE = os.environ.get("WHISPER_MODEL", "tiny")
+MODEL_SIZE = os.environ.get("WHISPER_MODEL", "base")
 
 # Setup logging
 logging.basicConfig(
@@ -140,7 +140,8 @@ class WhisperHandler(BaseHTTPRequestHandler):
             try:
                 # Transcribe
                 if model:
-                    result = model.transcribe(tmp_path, language='en')
+                    # IELTS 口语测试：使用英文，启用 vad 过滤静音
+                    result = model.transcribe(tmp_path, language='en', vad_filter=True)
                     text = result.get('text', '').strip()
                     logger.info(f"Transcribed: {text[:100]}...")
                 else:
