@@ -3787,14 +3787,13 @@ function TestView({
               {currentQuestionRecorded ? (
                 <Badge className="bg-green-100 text-green-700 hover:bg-green-100">已录音</Badge>
               ) : (
-                <span>请完成录音后继续</span>
+                <span className="text-amber-600">未录音</span>
               )}
             </div>
             <Button 
               variant="default"
               onClick={onNextQuestion}
-              disabled={!currentQuestionRecorded}
-              className={!currentQuestionRecorded ? 'opacity-50' : 'bg-[#E31837] hover:bg-[#C4142D]'}
+              className='bg-[#E31837] hover:bg-[#C4142D]'
             >
               {currentQuestionIndex < questions.length - 1 ? (
                 <>
@@ -3978,8 +3977,6 @@ function TestView({
             <Button 
               variant="outline" 
               onClick={onNextQuestion}
-              disabled={!currentQuestionRecorded}
-              className={!currentQuestionRecorded ? 'opacity-50 cursor-not-allowed' : ''}
             >
               {currentQuestionIndex < questions.length - 1 ? (
                 <>
