@@ -140,8 +140,8 @@ class WhisperHandler(BaseHTTPRequestHandler):
             try:
                 # Transcribe
                 if model:
-                    # IELTS 口语测试：使用英文，启用 vad 过滤静音
-                    result = model.transcribe(tmp_path, language='en', vad_filter=True)
+                    # IELTS 口语测试：强制英文识别
+                    result = model.transcribe(tmp_path, language='en')
                     text = result.get('text', '').strip()
                     logger.info(f"Transcribed: {text[:100]}...")
                 else:
